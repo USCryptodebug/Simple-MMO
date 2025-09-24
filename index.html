@@ -225,27 +225,25 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
     }
 
     // ---------- DISPLAY (safe, supports legacy numeric resources) ----------
-    function updateMyNationDisplay(n) {
-      const nameEl = document.getElementById('myNationName');
-      const popEl = document.getElementById('myNationPop');
-      const stabEl = document.getElementById('myNationStab');
-      const resList = document.getElementById('myNationResources');
+    // ---------- helper to update own nation display ----------
+function updateMyNationDisplay(nationData) {
+  if (!nationData) return;
 
-      nameEl.innerText = (n && n.name) ? n.name : '';
-      popEl.innerText = (n && typeof n.population !== 'undefined') ? n.population : '';
-      stabEl.innerText = (n && typeof n.stability !== 'undefined') ? n.stability : '';
+  // Build a string of all resources
+  let resourcesText = '';
+  if (typeof nationData.resources === 'number') {
+    resourcesText = `gold:${nationData.resources}`;
+  } else if (nationData.resources && typeof nationData.resources === 'object') {
+    resourcesText = Object.entries(nationData.resources)
+      .map(([key, value]) => `${key}: ${value}`)
+      .join(' | ');
+  }
 
-      resList.innerHTML = '';
+  // Update the "My Nation" div
+  document.getElementById('myNation').innerText =
+    `${nationData.name} | Pop: ${nationData.population} | Res: [${resourcesText}] | Stability: ${nationData.stability}`;
+}
 
-      // normalize resources: support legacy number -> gold, or object map
-      let resources = {};
-      if (n) {
-        if (typeof n.resources === 'number') {
-          resources = { gold: n.resources };
-        } else if (n.resources && typeof n.resources === 'object') {
-          resources = n.resources;
-        }
-      }
 
       if (Object.keys(resources).length > 0) {
         for (const type in resources) {
@@ -263,24 +261,36 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
 
     // display all nations live (safe resource formatting)
     nationsRef.on('value', snap => {
-      const data = snap.val() || {};
-      const out = [];
-      for (const uid in data) {
-        const n = data[uid];
-        let resText = '';
-        if (typeof n.resources === 'number') {
-          resText = `gold:${n.resources}`;
-        } else if (n.resources && typeof n.resources === 'object') {
-          resText = Object.entries(n.resources).map(([k,v]) => `${k}:${v}`).join(', ');
-        }
-        out.push(`<div>${n.name} | Pop:${n.population} | Res:[${resText}] | Stability:${n.stability}</div>`);
-        if (uid === myUid) {
-          myNationName = n.name;
-          updateMyNationDisplay(n);
-          document.getElementById('nationSetup').style.display = 'none';
-          document.getElementById('myNationContainer').style.display = 'block';
-        }
-      }
+  const data = snap.val() || {};
+  const out = [];
+
+  for (const uid in data) {
+    const n = data[uid];
+    let resText = '';
+
+    if (typeof n.resources === 'number') {
+      resText = `gold:${n.resources}`;
+    } else if (n.resources && typeof n.resources === 'object') {
+      resText = Object.entries(n.resources).map(([k, v]) => `${k}:${v}`).join(', ');
+    }
+
+    // Add attack button if this is not your own nation
+    const attackBtn = (uid !== myUid) ? `<button onclick="attackNation('${uid}')">⚔️ Attack</button>` : '';
+
+    out.push(`<div>${n.name} | Pop:${n.population} | Res:[${resText}] | Stability:${n.stability} ${attackBtn}</div>`);
+
+    // Update your own nation display
+    if (uid === myUid) {
+      myNationName = n.name;
+      updateMyNationDisplay(n);
+      document.getElementById('nationSetup').style.display = 'none';
+      document.getElementById('myNationContainer').style.display = 'block';
+    }
+  }
+
+  document.getElementById('nations').innerHTML = out.join('');
+});
+
       document.getElementById('nations').innerHTML = out.join('');
     });
 
@@ -384,6 +394,49 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
     function acceptTrade(tradeId) {
       if (!myUid) return alert('Login required to accept trades');
       const tradeRef = tradesRef.child(tradeId);
+
+
+    //War function
+    function attackNation(targetUid) {
+  if(!myUid || myUid === targetUid) return;
+
+  const attackerRef = nationsRef.child(myUid);
+  const defenderRef = nationsRef.child(targetUid);
+
+  attackerRef.once('value', aSnap => {
+    const attacker = aSnap.val();
+    defenderRef.once('value', dSnap => {
+      const defender = dSnap.val();
+      if(!attacker || !defender) return;
+
+      const atk = attacker.resources.military || 0;
+      const def = defender.resources.military || 0;
+      let message = '';
+
+      if(atk > def) {
+        // Attacker wins
+        const stolenGold = Math.min(defender.resources.gold || 0, 20);
+        attacker.resources.gold = (attacker.resources.gold || 0) + stolenGold;
+        defender.resources.gold = (defender.resources.gold || 0) - stolenGold;
+
+        attacker.resources.military = Math.max(atk - 5, 0);
+        defender.resources.military = Math.max(def - 10, 0);
+
+        message = `${attacker.name} defeated ${defender.name} and stole ${stolenGold} gold!`;
+      } else {
+        // Defender wins
+        attacker.resources.military = Math.max(atk - 10, 0);
+        defender.resources.military = Math.max(def - 5, 0);
+
+        message = `${attacker.name} was repelled by ${defender.name}!`;
+      }
+
+      attackerRef.set(attacker);
+      defenderRef.set(defender);
+      messagesRef.push({ uid: myUid, name: attacker.name, text: message, t: Date.now() });
+    });
+  });
+}
 
       // Step 1: try to mark trade accepted (ensures only one acceptor)
       tradeRef.transaction(tr => {
