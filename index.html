@@ -18,11 +18,12 @@ body {
 }
 .col { display:flex; gap:12px; }
 .box { background:#1a1a1a; padding:12px; border-radius:6px; flex:1; min-width:260px; }
-input,button { padding:8px; margin:6px 0; width:100%; box-sizing:border-box; }
+input,button,select { padding:8px; margin:6px 0; width:100%; box-sizing:border-box; }
 #nations, #messages, #tradeList { height:200px; overflow:auto; border:1px solid #333; padding:8px; background:#0f0f0f; }
 h1 { color:#ffd54f; margin:0 0 12px 0; }
 .small { font-size:0.9rem; color:#aaa; }
 .tradeRow { margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid #222; }
+ul#myNationResources { margin: 0; padding-left: 18px; }
   </style>
   
 </head>
@@ -67,17 +68,41 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
         <input id="msgInput" placeholder="Say something...">
         <button onclick="sendMessage()">Send</button>
 
-        <h3 style="margin-top:12px">Economy / Trades</h3>
-        <input id="tradeAmount" type="number" placeholder="Amount (resources)">
-        <button onclick="postTrade()">Post Offer (sell resources)</button>
-        <p class="small">Posting an offer subtracts resources immediately from your nation (prevent double-spend).</p>
+        <h3 style="margin-top:12px">Economy / Trades (Create Offer)</h3>
+
+        <!-- Offer: resource type + amount -->
+        <label class="small">Offer (give)</label>
+        <select id="offerType">
+          <option value="gold">gold</option>
+          <option value="military">military</option>
+          <option value="wood">wood</option>
+          <option value="iron">iron</option>
+          <option value="oil">oil</option>
+          <option value="uranium">uranium</option>
+        </select>
+        <input id="offerAmount" type="number" placeholder="Offer amount">
+
+        <!-- Want: resource type + amount -->
+        <label class="small">Want (receive)</label>
+        <select id="wantType">
+          <option value="gold">gold</option>
+          <option value="military">military</option>
+          <option value="wood">wood</option>
+          <option value="iron">iron</option>
+          <option value="oil">oil</option>
+          <option value="uranium">uranium</option>
+        </select>
+        <input id="wantAmount" type="number" placeholder="Want amount">
+
+        <button onclick="postTrade()">Post Offer</button>
+        <p class="small">Posting an offer subtracts your offered resource immediately (prevents double-spend).</p>
       </div>
     </div>
 
     <div style="margin-top:12px" class="box">
       <h3>Trade Board</h3>
       <div id="tradeList"></div>
-      <p class="small">Click Accept to take an offer (resources will be transferred to you).</p>
+      <p class="small">Click Accept to take an offer (resources will be transferred atomically).</p>
     </div>
   </div>
 
@@ -136,6 +161,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
         document.getElementById('authStatus').innerText = 'Logged in as ' + (user.email || user.uid);
         document.getElementById('authUI').style.display = 'none';
         document.getElementById('gameUI').style.display = 'block';
+        // check if user already has a nation
         nationsRef.child(myUid).once('value', snap => {
           if (snap.exists()) {
             myNationName = snap.val().name;
@@ -156,13 +182,14 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
       }
     });
 
-    // ---------- NATION CREATION ----------
+    // ---------- NATION CREATION (seed full resources) ----------
     function createNation() {
       const name = document.getElementById('nationNameInput').value.trim();
       if (!name) return alert('Enter a nation name');
 
       const name_lc = name.toLowerCase();
 
+      // check uniqueness using orderByChild('name_lc').equalTo(name_lc)
       nationsRef.orderByChild('name_lc').equalTo(name_lc).once('value', snapshot => {
         if (snapshot.exists()) {
           alert('That nation name is already taken (case-insensitive). Choose another.');
@@ -179,7 +206,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
             wood: 200,
             iron: 10,
             oil: 10,
-            uranium: 0,
+            uranium: 0
           },
           stability: 70,
           ownerUid: myUid
@@ -197,27 +224,32 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
       });
     }
 
-    // ---------- DISPLAY ----------
+    // ---------- DISPLAY (safe, supports legacy numeric resources) ----------
     function updateMyNationDisplay(n) {
       const nameEl = document.getElementById('myNationName');
       const popEl = document.getElementById('myNationPop');
       const stabEl = document.getElementById('myNationStab');
       const resList = document.getElementById('myNationResources');
 
-      nameEl.innerText = n.name;
-      popEl.innerText = n.population;
-      stabEl.innerText = n.stability;
+      nameEl.innerText = (n && n.name) ? n.name : '';
+      popEl.innerText = (n && typeof n.population !== 'undefined') ? n.population : '';
+      stabEl.innerText = (n && typeof n.stability !== 'undefined') ? n.stability : '';
+
       resList.innerHTML = '';
 
+      // normalize resources: support legacy number -> gold, or object map
       let resources = {};
-      if (typeof n.resources === 'number') {
-        resources = { gold: n.resources };
-      } else if (n.resources && typeof n.resources === 'object') {
-        resources = n.resources;
+      if (n) {
+        if (typeof n.resources === 'number') {
+          resources = { gold: n.resources };
+        } else if (n.resources && typeof n.resources === 'object') {
+          resources = n.resources;
+        }
       }
 
       if (Object.keys(resources).length > 0) {
         for (const type in resources) {
+          if (!Object.prototype.hasOwnProperty.call(resources, type)) continue;
           const li = document.createElement('li');
           li.textContent = `${type}: ${resources[type]}`;
           resList.appendChild(li);
@@ -229,6 +261,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
       }
     }
 
+    // display all nations live (safe resource formatting)
     nationsRef.on('value', snap => {
       const data = snap.val() || {};
       const out = [];
@@ -240,7 +273,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
         } else if (n.resources && typeof n.resources === 'object') {
           resText = Object.entries(n.resources).map(([k,v]) => `${k}:${v}`).join(', ');
         }
-        out.push(`<div>${n.name} | Pop:${n.population} | Res:${resText} | Stability:${n.stability}</div>`);
+        out.push(`<div>${n.name} | Pop:${n.population} | Res:[${resText}] | Stability:${n.stability}</div>`);
         if (uid === myUid) {
           myNationName = n.name;
           updateMyNationDisplay(n);
@@ -251,15 +284,17 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
       document.getElementById('nations').innerHTML = out.join('');
     });
 
-    // ---------- NATION ACTIONS ----------
+    // ---------- NATION ACTIONS (normalize resources) ----------
     function collectTaxes() {
       if (!myUid) return alert('Not logged in');
       const ref = nationsRef.child(myUid);
       ref.once('value', snap => {
         const n = snap.val();
         if (!n) return alert('You have no nation yet');
+
         if (typeof n.resources === 'number') n.resources = { gold: n.resources };
         if (!n.resources || typeof n.resources !== 'object') n.resources = {};
+
         n.resources.gold = (n.resources.gold || 0) + 10;
         n.stability = (n.stability || 0) - 5;
         ref.set(n);
@@ -271,8 +306,10 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
       ref.once('value', snap => {
         const n = snap.val();
         if (!n) return alert('You have no nation yet');
+
         if (typeof n.resources === 'number') n.resources = { gold: n.resources };
         if (!n.resources || typeof n.resources !== 'object') n.resources = {};
+
         n.stability = (n.stability || 0) + 5;
         n.resources.gold = (n.resources.gold || 0) - 5;
         ref.set(n);
@@ -296,21 +333,29 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
       document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
     });
 
-    // ---------- TRADING ----------
+    // ---------- TRADING / ECONOMY (improved multi-resource trades) ----------
+    // Post an offer — subtract seller's offered resource atomically, then create trade
     function postTrade() {
       if (!myUid) return alert('Login required to post trades');
-      const raw = document.getElementById('tradeAmount').value;
-      const amount = parseInt(raw, 10);
-      if (!amount || amount <= 0) return alert('Enter a positive amount of resources to sell');
+
+      const offerType = document.getElementById('offerType').value;
+      const offerAmount = parseInt(document.getElementById('offerAmount').value, 10);
+      const wantType = document.getElementById('wantType').value;
+      const wantAmount = parseInt(document.getElementById('wantAmount').value, 10);
+
+      if (!offerAmount || offerAmount <= 0) return alert('Enter a valid offer amount');
+      if (!wantAmount || wantAmount <= 0) return alert('Enter a valid wanted amount');
 
       const myRef = nationsRef.child(myUid);
+
+      // Subtract offered resource atomically (normalize legacy numeric resources)
       myRef.transaction(curr => {
-        if (curr === null) return;
+        if (!curr) return;
         if (typeof curr.resources === 'number') curr.resources = { gold: curr.resources };
         if (!curr.resources || typeof curr.resources !== 'object') curr.resources = {};
-        const res = curr.resources.gold || 0;
-        if (res < amount) return;
-        curr.resources.gold = res - amount;
+        const have = curr.resources[offerType] || 0;
+        if (have < offerAmount) return; // abort - insufficient
+        curr.resources[offerType] = have - offerAmount;
         return curr;
       }, (err, committed, snap) => {
         if (err) {
@@ -318,27 +363,32 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
           return;
         }
         if (!committed) {
-          alert('Not enough resources to post that offer.');
+          alert('Not enough ' + offerType + ' to post that offer.');
           return;
         }
         const myNation = snap.val().name || ('uid:' + myUid);
         tradesRef.push({
           fromUid: myUid,
           fromNation: myNation,
-          amount: amount,
+          offerType: offerType,
+          offerAmount: offerAmount,
+          wantType: wantType,
+          wantAmount: wantAmount,
           status: 'pending',
           createdAt: Date.now()
         });
       });
     }
 
+    // Accept a trade: mark trade accepted, then perform buyer/seller resource transfers atomically.
     function acceptTrade(tradeId) {
       if (!myUid) return alert('Login required to accept trades');
       const tradeRef = tradesRef.child(tradeId);
 
+      // Step 1: try to mark trade accepted (ensures only one acceptor)
       tradeRef.transaction(tr => {
-        if (tr === null) return;
-        if (tr.status !== 'pending') return;
+        if (!tr) return;
+        if (tr.status !== 'pending') return; // abort if already taken
         tr.status = 'accepted';
         tr.acceptedByUid = myUid;
         tr.acceptedByNation = myNationName || ('uid:' + myUid);
@@ -350,27 +400,78 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
           return;
         }
         if (!committed) {
-          alert('Trade is no longer available.');
+          alert('Trade is no longer available (someone else accepted it).');
           return;
         }
+
         const trade = snap.val();
+        const sellerRef = nationsRef.child(trade.fromUid);
         const buyerRef = nationsRef.child(myUid);
+
+        // Step 2: Buyer pays wantAmount of wantType and receives offerAmount of offerType
         buyerRef.transaction(buyer => {
-          if (buyer === null) return;
+          if (!buyer) return;
           if (typeof buyer.resources === 'number') buyer.resources = { gold: buyer.resources };
           if (!buyer.resources || typeof buyer.resources !== 'object') buyer.resources = {};
-          buyer.resources.gold = (buyer.resources.gold || 0) + (trade.amount || 0);
+          const haveWant = buyer.resources[trade.wantType] || 0;
+          if (haveWant < trade.wantAmount) return; // abort if buyer lacks requested resource
+          buyer.resources[trade.wantType] = haveWant - trade.wantAmount;
+          buyer.resources[trade.offerType] = (buyer.resources[trade.offerType] || 0) + trade.offerAmount;
           return buyer;
-        });
-        messagesRef.push({
-          uid: myUid,
-          name: myNationName || 'Unknown',
-          text: `accepted ${trade.fromNation}'s offer of ${trade.amount} gold.`,
-          t: Date.now()
+        }, (err2, committed2, snap2) => {
+          if (err2 || !committed2) {
+            // Buyer couldn't pay — revert trade to pending
+            tradeRef.update({
+              status: 'pending',
+              acceptedByUid: null,
+              acceptedByNation: null,
+              acceptedAt: null
+            });
+            alert('You do not have enough ' + trade.wantType + ' to accept this offer.');
+            return;
+          }
+
+          // Step 3: Credit seller with the wantAmount of wantType
+          sellerRef.transaction(seller => {
+            if (!seller) return;
+            if (typeof seller.resources === 'number') seller.resources = { gold: seller.resources };
+            if (!seller.resources || typeof seller.resources !== 'object') seller.resources = {};
+            seller.resources[trade.wantType] = (seller.resources[trade.wantType] || 0) + trade.wantAmount;
+            return seller;
+          }, (err3) => {
+            // If seller credit fails for some reason, attempt to rollback buyer (best-effort)
+            if (err3) {
+              // attempt rollback buyer: remove received offerAmount, refund wantAmount
+              buyerRef.transaction(b => {
+                if (!b || !b.resources) return b;
+                b.resources[trade.offerType] = (b.resources[trade.offerType] || 0) - trade.offerAmount;
+                b.resources[trade.wantType] = (b.resources[trade.wantType] || 0) + trade.wantAmount;
+                return b;
+              });
+              // revert trade to pending
+              tradeRef.update({
+                status: 'pending',
+                acceptedByUid: null,
+                acceptedByNation: null,
+                acceptedAt: null
+              });
+              alert('Trade failed while crediting seller; your transaction was rolled back.');
+              return;
+            }
+
+            // All good — record message
+            messagesRef.push({
+              uid: myUid,
+              name: myNationName || 'Unknown',
+              text: `accepted ${trade.fromNation}'s offer: gave ${trade.wantAmount} ${trade.wantType}, got ${trade.offerAmount} ${trade.offerType}.`,
+              t: Date.now()
+            });
+          });
         });
       });
     }
 
+    // Show trade list live
     tradesRef.on('value', snap => {
       const out = [];
       snap.forEach(child => {
@@ -380,18 +481,20 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
         if (t.status === 'pending') {
           const showAccept = (t.fromUid !== myUid);
           const acceptBtn = showAccept ? `<button onclick="acceptTrade('${id}')">Accept</button>` : '<span class="small">your offer</span>';
-          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> selling <b>${t.amount}</b> gold — ${acceptBtn}</div>`);
+          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> offers <b>${t.offerAmount} ${t.offerType}</b> for <b>${t.wantAmount} ${t.wantType}</b> — ${acceptBtn}</div>`);
         } else {
-          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> sold ${t.amount} to ${t.acceptedByNation || t.acceptedByUid} (accepted)</div>`);
+          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> traded ${t.offerAmount} ${t.offerType} for ${t.wantAmount} ${t.wantType} with ${t.acceptedByNation || t.acceptedByUid} (accepted)</div>`);
         }
       });
       document.getElementById('tradeList').innerHTML = out.join('') || '<i>No trades posted.</i>';
     });
 
+    // expose logout for convenience
     window.logout = logout;
   </script>
 </body>
 </html>
+
 
 
 
