@@ -50,10 +50,70 @@
     <button onclick="sendMessage()">Send</button>
   </div>
 
+    <!-- Economy -->
+    <h3>World Economy</h3>
+<input id="offerInput" placeholder="What you offer">
+<input id="wantInput" placeholder="What you want">
+<button onclick="postTrade()">Post Trade</button>
+
+<div id="tradeList"></div>
+  
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script>
+// Reference to economy trades
+const tradesRef = db.ref("economy");
+
+// Post a new trade
+function postTrade() {
+  const offer = document.getElementById("offerInput").value;
+  const want = document.getElementById("wantInput").value;
+
+  if (!offer || !want) {
+    alert("Please enter both offer and want.");
+    return;
+  }
+
+  tradesRef.push({
+    fromNation: currentNation || "Guest",
+    offer: offer,
+    want: want,
+    acceptedBy: ""
+  });
+
+  document.getElementById("offerInput").value = "";
+  document.getElementById("wantInput").value = "";
+}
+
+// Accept a trade
+function acceptTrade(id) {
+  const tradeRef = db.ref("economy/" + id);
+  tradeRef.once("value", snapshot => {
+    const trade = snapshot.val();
+    if (trade && !trade.acceptedBy) {
+      tradeRef.update({ acceptedBy: currentNation || "Guest" });
+    }
+  });
+}
+
+// Listen for trades
+tradesRef.on("value", snapshot => {
+  let html = "<b>Available Trades:</b><br>";
+  snapshot.forEach(child => {
+    const t = child.val();
+    if (t.acceptedBy === "") {
+      html += `${t.fromNation} offers ${t.offer} for ${t.want} 
+               <button onclick="acceptTrade('${child.key}')">Accept</button><br>`;
+    } else {
+      html += `${t.fromNation}'s trade already accepted by ${t.acceptedBy}<br>`;
+    }
+  });
+  document.getElementById("tradeList").innerHTML = html;
+});
+  </script>
+  
 
   <script>
     // ---------------- Firebase Config ----------------
