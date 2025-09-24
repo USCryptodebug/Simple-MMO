@@ -18,7 +18,7 @@ body {
 }
 .col { display:flex; gap:12px; }
 .box { background:#1a1a1a; padding:12px; border-radius:6px; flex:1; min-width:260px; }
-input,button { padding:8px; margin:6px 0; width:100%; box-sizing:border-box; }
+input,button,select { padding:8px; margin:6px 0; width:100%; box-sizing:border-box; }
 #nations, #messages, #tradeList { height:200px; overflow:auto; border:1px solid #333; padding:8px; background:#0f0f0f; }
 h1 { color:#ffd54f; margin:0 0 12px 0; }
 .small { font-size:0.9rem; color:#aaa; }
@@ -64,9 +64,28 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
         <button onclick="sendMessage()">Send</button>
 
         <h3 style="margin-top:12px">Economy / Trades</h3>
-        <input id="tradeAmount" type="number" placeholder="Amount (resources)">
-        <button onclick="postTrade()">Post Offer (sell resources)</button>
-        <p class="small">Posting an offer subtracts resources immediately from your nation (prevent double-spend).</p>
+        <select id="offerType">
+          <option value="gold">Gold</option>
+          <option value="military">Military</option>
+          <option value="wood">Wood</option>
+          <option value="iron">Iron</option>
+          <option value="oil">Oil</option>
+          <option value="uranium">Uranium</option>
+        </select>
+        <input id="offerAmount" type="number" placeholder="Offer amount">
+
+        <select id="wantType">
+          <option value="gold">Gold</option>
+          <option value="military">Military</option>
+          <option value="wood">Wood</option>
+          <option value="iron">Iron</option>
+          <option value="oil">Oil</option>
+          <option value="uranium">Uranium</option>
+        </select>
+        <input id="wantAmount" type="number" placeholder="Want amount">
+
+        <button onclick="postTrade()">Post Offer</button>
+        <p class="small">Posting subtracts offered resources immediately from your nation.</p>
       </div>
     </div>
 
@@ -178,9 +197,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
             iron: 10,
             oil: 10,
             uranium: 0,
-            
-            
-           },
+          },
           stability: 70,
           ownerUid: myUid
         };
@@ -199,7 +216,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
 
     // helper to update own nation display
     function updateMyNationDisplay(n) {
-      document.getElementById('myNation').innerText = `${n.name} | Pop: ${n.population} | Res: ${n.resources} | Stability: ${n.stability}`;
+      document.getElementById('myNation').innerText = `${n.name} | Pop: ${n.population} | Res: ${JSON.stringify(n.resources)} | Stability: ${n.stability}`;
     }
 
     // display all nations live
@@ -208,7 +225,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
       const out = [];
       for (const uid in data) {
         const n = data[uid];
-        out.push(`<div>${n.name} | Pop:${n.population} | Res:${n.resources} | Stability:${n.stability}</div>`);
+        out.push(`<div>${n.name} | Pop:${n.population} | Res:${JSON.stringify(n.resources)} | Stability:${n.stability}</div>`);
         // if it's me update local display & name
         if (uid === myUid) {
           myNationName = n.name;
@@ -224,11 +241,10 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
     function collectTaxes() {
       if (!myUid) return alert('Not logged in');
       const ref = nationsRef.child(myUid);
-      // simple read-modify-set (OK for prototype)
       ref.once('value', snap => {
         const n = snap.val();
         if (!n) return alert('You have no nation yet');
-        n.resources = (n.resources || 0) + 10;
+        n.resources.gold = (n.resources.gold || 0) + 10;
         n.stability = (n.stability || 0) - 5;
         ref.set(n);
       });
@@ -240,7 +256,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
         const n = snap.val();
         if (!n) return alert('You have no nation yet');
         n.stability = (n.stability || 0) + 5;
-        n.resources = (n.resources || 0) - 5;
+        n.resources.gold = (n.resources.gold || 0) - 5;
         ref.set(n);
       });
     }
@@ -263,103 +279,105 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
     });
 
     // ---------- TRADING / ECONOMY ----------
-    // Post an offer — subtract seller's resources atomically using a transaction, then create trade
     function postTrade() {
       if (!myUid) return alert('Login required to post trades');
-      const raw = document.getElementById('tradeAmount').value;
-      const amount = parseInt(raw, 10);
-      if (!amount || amount <= 0) return alert('Enter a positive amount of resources to sell');
+
+      const offerType = document.getElementById('offerType').value;
+      const offerAmount = parseInt(document.getElementById('offerAmount').value, 10);
+      const wantType = document.getElementById('wantType').value;
+      const wantAmount = parseInt(document.getElementById('wantAmount').value, 10);
+
+      if (!offerAmount || offerAmount <= 0) return alert('Enter a valid offer amount');
+      if (!wantAmount || wantAmount <= 0) return alert('Enter a valid wanted amount');
 
       const myRef = nationsRef.child(myUid);
-      // transaction to subtract resources atomically
+
       myRef.transaction(curr => {
-        if (curr === null) {
-          return; // abort
-        }
-        const res = curr.resources || 0;
-        if (res < amount) return; // not enough -> abort
-        curr.resources = res - amount;
-        return curr; // commit
+        if (!curr) return;
+        if (!curr.resources || curr.resources[offerType] < offerAmount) return; // not enough
+        curr.resources[offerType] -= offerAmount;
+        return curr;
       }, (err, committed, snap) => {
-        if (err) {
-          alert('Transaction error: ' + err.message);
-          return;
-        }
-        if (!committed) {
-          alert('Not enough resources to post that offer.');
-          return;
-        }
-        // committed: create trade record
+        if (err) return alert('Transaction error: ' + err.message);
+        if (!committed) return alert('Not enough ' + offerType);
+
         const myNation = snap.val().name || ('uid:' + myUid);
         tradesRef.push({
           fromUid: myUid,
           fromNation: myNation,
-          amount: amount,
+          offerType: offerType,
+          offerAmount: offerAmount,
+          wantType: wantType,
+          wantAmount: wantAmount,
           status: 'pending',
           createdAt: Date.now()
         });
       });
     }
 
-    // Accept a trade: atomically set trade.status='accepted' and add resources to acceptor
     function acceptTrade(tradeId) {
       if (!myUid) return alert('Login required to accept trades');
       const tradeRef = tradesRef.child(tradeId);
 
-      // Step 1: atomically change trade to accepted if still pending
       tradeRef.transaction(tr => {
-        if (tr === null) return; // no trade
-        if (tr.status !== 'pending') return; // abort, already accepted/rejected
+        if (!tr || tr.status !== 'pending') return;
         tr.status = 'accepted';
         tr.acceptedByUid = myUid;
         tr.acceptedByNation = myNationName || ('uid:' + myUid);
         tr.acceptedAt = Date.now();
         return tr;
       }, (err, committed, snap) => {
-        if (err) {
-          alert('Trade transaction failed: ' + err.message);
-          return;
-        }
-        if (!committed) {
-          alert('Trade is no longer available (someone else accepted it).');
-          return;
-        }
-        // Now add resources to acceptor atomically
-        const added = snap.val().amount || 0;
-        const myRef = nationsRef.child(myUid);
-        myRef.transaction(n => {
-          if (n === null) return; // shouldn't happen
-          n.resources = (n.resources || 0) + added;
-          return n;
-        }, (e2, c2, s2) => {
-          if (e2) console.error('Error crediting resources:', e2);
-          // optional: record acceptance event in messages
-          messagesRef.push({ uid: myUid, name: myNationName || 'Unknown', text: `accepted ${snap.val().fromNation}'s offer of ${added} resources.`, t: Date.now() });
+        if (err) return alert('Trade error: ' + err.message);
+        if (!committed) return alert('Trade no longer available');
+
+        const trade = snap.val();
+        const sellerRef = nationsRef.child(trade.fromUid);
+        const buyerRef = nationsRef.child(myUid);
+
+        buyerRef.transaction(buyer => {
+          if (!buyer) return;
+          if (!buyer.resources || buyer.resources[trade.wantType] < trade.wantAmount) return;
+          buyer.resources[trade.wantType] -= trade.wantAmount;
+          buyer.resources[trade.offerType] = (buyer.resources[trade.offerType] || 0) + trade.offerAmount;
+          return buyer;
+        }, (err2, committed2) => {
+          if (err2 || !committed2) {
+            alert('You lack enough ' + trade.wantType + ' to accept.');
+            return;
+          }
+          sellerRef.transaction(seller => {
+            if (!seller) return;
+            seller.resources[trade.wantType] = (seller.resources[trade.wantType] || 0) + trade.wantAmount;
+            return seller;
+          });
+          messagesRef.push({
+            uid: myUid,
+            name: myNationName || 'Unknown',
+            text: `accepted ${trade.fromNation}'s offer: gave ${trade.wantAmount} ${trade.wantType}, got ${trade.offerAmount} ${trade.offerType}.`,
+            t: Date.now()
+          });
         });
       });
     }
 
-    // Show trade list live
     tradesRef.on('value', snap => {
       const out = [];
       snap.forEach(child => {
         const t = child.val();
-        const id = child.key;
         if (!t) return;
         if (t.status === 'pending') {
-          // only show Accept button if not your own offer
           const showAccept = (t.fromUid !== myUid);
-          const acceptBtn = showAccept ? `<button onclick="acceptTrade('${id}')">Accept</button>` : '<span class="small">your offer</span>';
-          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> selling <b>${t.amount}</b> resources — ${acceptBtn}</div>`);
+          const acceptBtn = showAccept ? `<button onclick="acceptTrade('${child.key}')">Accept</button>` : '<span class="small">your offer</span>';
+          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> offers ${t.offerAmount} ${t.offerType} for ${t.wantAmount} ${t.wantType} — ${acceptBtn}</div>`);
         } else {
-          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> sold ${t.amount} to ${t.acceptedByNation || t.acceptedByUid} (accepted)</div>`);
+          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> traded ${t.offerAmount} ${t.offerType} for ${t.wantAmount} ${t.wantType} with ${t.acceptedByNation}</div>`);
         }
       });
       document.getElementById('tradeList').innerHTML = out.join('') || '<i>No trades posted.</i>';
     });
 
-    // Expose logout for convenience (button present)
     window.logout = logout;
   </script>
 </body>
 </html>
+
