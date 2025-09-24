@@ -13,25 +13,38 @@
 <body>
   <h1>🌍 Firebase Political MMO</h1>
 
-  <!-- Nation Creation -->
-  <div id="nationSetup">
-    <input id="nationNameInput" placeholder="Enter your nation's name">
-    <button onclick="createNation()">Create Nation</button>
+  <!-- Authentication UI -->
+  <div id="authUI">
+    <h2>Login / Register</h2>
+    <input type="email" id="emailInput" placeholder="Email">
+    <input type="password" id="passwordInput" placeholder="Password">
+    <button onclick="register()">Register</button>
+    <button onclick="login()">Login</button>
   </div>
 
-  <!-- Nation Actions -->
+  <!-- Game UI -->
   <div id="gameUI" style="display:none;">
-    <h2>Your Nation</h2>
-    <div id="myNation"></div>
-    <button onclick="collectTaxes()">💰 Collect Taxes</button>
-    <button onclick="boostWelfare()">❤️ Boost Welfare</button>
+    <!-- Nation Creation -->
+    <div id="nationSetup">
+      <input id="nationNameInput" placeholder="Enter your nation's name">
+      <button onclick="createNation()">Create Nation</button>
+    </div>
 
+    <!-- Nation Actions -->
+    <div id="myNationContainer" style="display:none;">
+      <h2>Your Nation</h2>
+      <div id="myNation"></div>
+      <button onclick="collectTaxes()">💰 Collect Taxes</button>
+      <button onclick="boostWelfare()">❤️ Boost Welfare</button>
+    </div>
+
+    <!-- All Nations -->
     <h2>All Nations</h2>
     <div id="nations"></div>
 
+    <!-- Chat -->
     <h2>Global Chat</h2>
     <div id="messages"></div>
-    <input id="nameInput" placeholder="Your name">
     <input id="msgInput" placeholder="Say something...">
     <button onclick="sendMessage()">Send</button>
   </div>
@@ -39,9 +52,10 @@
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
   <script>
-    // ✅ Your Firebase config
+    // ---------------- Firebase Config ----------------
     const firebaseConfig = {
       apiKey: "AIzaSyBAJVns_sxQgyTIv6Psom0zfBfq556L8Fk",
       authDomain: "simple-mmo-f0584.firebaseapp.com",
@@ -52,57 +66,101 @@
       appId: "1:428789480488:web:6172fd10f5088c068fc91d"
     };
 
+    // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
+    const auth = firebase.auth();
 
     const nationsRef = db.ref("nations");
     const messagesRef = db.ref("messages");
 
-    let myNationId = null;
+    let myUserId = null; // UID of logged-in user
+    let myNationName = null; // To display in chat
 
-    // --- Nation Creation ---
+    // ---------------- Authentication Functions ----------------
+    function register() {
+      const email = document.getElementById("emailInput").value;
+      const password = document.getElementById("passwordInput").value;
+
+      if (!email || !password) return alert("Enter email and password");
+
+      auth.createUserWithEmailAndPassword(email, password)
+        .then(userCredential => {
+          myUserId = userCredential.user.uid;
+          showGameUI();
+        })
+        .catch(error => alert("Registration error: " + error.message));
+    }
+
+    function login() {
+      const email = document.getElementById("emailInput").value;
+      const password = document.getElementById("passwordInput").value;
+
+      if (!email || !password) return alert("Enter email and password");
+
+      auth.signInWithEmailAndPassword(email, password)
+        .then(userCredential => {
+          myUserId = userCredential.user.uid;
+          showGameUI();
+        })
+        .catch(error => alert("Login error: " + error.message));
+    }
+
+    function showGameUI() {
+      document.getElementById("authUI").style.display = "none";
+      document.getElementById("gameUI").style.display = "block";
+
+      // Check if nation exists
+      nationsRef.child(myUserId).once("value", snap => {
+        if (snap.exists()) {
+          myNationName = snap.val().name;
+          document.getElementById("nationSetup").style.display = "none";
+          document.getElementById("myNationContainer").style.display = "block";
+        } else {
+          document.getElementById("nationSetup").style.display = "block";
+        }
+      });
+    }
+
+    // ---------------- Nation Creation ----------------
     function createNation() {
       const name = document.getElementById("nationNameInput").value.trim();
-      if (!name) return alert("Please enter a nation name!");
+      if (!name) return alert("Enter a nation name");
 
-      const newNation = {
+      const nation = {
         name: name,
         population: 100,
         resources: 50,
         stability: 70
       };
 
-      const ref = nationsRef.push(newNation);
-      myNationId = ref.key;
-
-      document.getElementById("nationSetup").style.display = "none";
-      document.getElementById("gameUI").style.display = "block";
+      nationsRef.child(myUserId).set(nation, () => {
+        myNationName = name;
+        document.getElementById("nationSetup").style.display = "none";
+        document.getElementById("myNationContainer").style.display = "block";
+      });
     }
 
-    // --- Actions ---
+    // ---------------- Nation Actions ----------------
     function collectTaxes() {
-      if (!myNationId) return;
-      const nationRef = nationsRef.child(myNationId);
-      nationRef.once("value", snap => {
+      nationsRef.child(myUserId).once("value", snap => {
         const n = snap.val();
         n.resources += 10;
         n.stability -= 5;
-        nationRef.set(n);
+        nationsRef.child(myUserId).set(n);
       });
     }
 
     function boostWelfare() {
-      if (!myNationId) return;
-      const nationRef = nationsRef.child(myNationId);
-      nationRef.once("value", snap => {
+      nationsRef.child(myUserId).once("value", snap => {
         const n = snap.val();
         n.stability += 5;
         n.resources -= 5;
-        nationRef.set(n);
+        nationsRef.child(myUserId).set(n);
       });
     }
 
-    // --- Display My Nation ---
+    // ---------------- Display Nations ----------------
     nationsRef.on("value", snap => {
       const data = snap.val() || {};
       const nationsDiv = document.getElementById("nations");
@@ -115,24 +173,27 @@
         div.textContent = `${n.name} | Pop: ${n.population} | Res: ${n.resources} | Stability: ${n.stability}`;
         nationsDiv.appendChild(div);
 
-        if (id === myNationId) {
+        if (id === myUserId) {
           document.getElementById("myNation").textContent =
             `${n.name} | Pop: ${n.population} | Res: ${n.resources} | Stability: ${n.stability}`;
+          myNationName = n.name;
         }
       }
     });
 
-    // --- Chat ---
+    // ---------------- Chat ----------------
     function sendMessage() {
-      const name = document.getElementById("nameInput").value || "anon";
-      const text = document.getElementById("msgInput").value;
-      if (!text.trim()) return;
-      messagesRef.push({ name, text });
+      const text = document.getElementById("msgInput").value.trim();
+      if (!text) return;
+
+      if (!myNationName) return alert("Nation name not set yet");
+
+      messagesRef.push({ name: myNationName, text });
       document.getElementById("msgInput").value = "";
     }
 
-    messagesRef.on("child_added", snapshot => {
-      const msg = snapshot.val();
+    messagesRef.on("child_added", snap => {
+      const msg = snap.val();
       const div = document.createElement("div");
       div.textContent = msg.name + ": " + msg.text;
       document.getElementById("messages").appendChild(div);
