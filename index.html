@@ -52,12 +52,10 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
           <p><b id="myNationName"></b></p>
           <p>Population: <span id="myNationPop"></span></p>
           <p>Stability: <span id="myNationStab"></span></p>
-          <div>
-            <h4>Resources</h4>
-            <ul id="myNationResources"></ul>
-          </div>
-          <button onclick="collectTaxes()">💰 Collect Taxes (+10 res, -5 stability)</button>
-          <button onclick="boostWelfare()">❤️ Boost Welfare (+5 stability, -5 res)</button>
+          <p>Resources:</p>
+          <ul id="myNationResources"></ul>
+          <button onclick="collectTaxes()">💰 Collect Taxes (+10 gold, -5 stability)</button>
+          <button onclick="boostWelfare()">❤️ Boost Welfare (+5 stability, -5 gold)</button>
         </div>
         <h4>All Nations</h4>
         <div id="nations"></div>
@@ -138,7 +136,6 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
         document.getElementById('authStatus').innerText = 'Logged in as ' + (user.email || user.uid);
         document.getElementById('authUI').style.display = 'none';
         document.getElementById('gameUI').style.display = 'block';
-        // check if user already has a nation
         nationsRef.child(myUid).once('value', snap => {
           if (snap.exists()) {
             myNationName = snap.val().name;
@@ -182,7 +179,7 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
             wood: 200,
             iron: 10,
             oil: 10,
-            uranium: 0
+            uranium: 0,
           },
           stability: 70,
           ownerUid: myUid
@@ -200,51 +197,50 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
       });
     }
 
-    // helper to update own nation display
-    // helper to update own nation display (replace your existing function)
-function updateMyNationDisplay(n) {
-  console.log('updateMyNationDisplay called with:', n); // debug: check in browser console
+    // ---------- DISPLAY ----------
+    function updateMyNationDisplay(n) {
+      const nameEl = document.getElementById('myNationName');
+      const popEl = document.getElementById('myNationPop');
+      const stabEl = document.getElementById('myNationStab');
+      const resList = document.getElementById('myNationResources');
 
-  // name / pop / stab elements
-  const nameEl = document.getElementById('myNationName');
-  const popEl = document.getElementById('myNationPop');
-  const stabEl = document.getElementById('myNationStab');
-  const resList = document.getElementById('myNationResources');
+      nameEl.innerText = n.name;
+      popEl.innerText = n.population;
+      stabEl.innerText = n.stability;
+      resList.innerHTML = '';
 
-  nameEl.innerText = (n && n.name) ? n.name : '';
-  popEl.innerText = (n && typeof n.population !== 'undefined') ? n.population : '';
-  stabEl.innerText = (n && typeof n.stability !== 'undefined') ? n.stability : '';
+      let resources = {};
+      if (typeof n.resources === 'number') {
+        resources = { gold: n.resources };
+      } else if (n.resources && typeof n.resources === 'object') {
+        resources = n.resources;
+      }
 
-  // clear existing list
-  resList.innerHTML = '';
-
-  // render resources safely
-  if (n && n.resources && Object.keys(n.resources).length > 0) {
-    for (const type in n.resources) {
-      if (!Object.prototype.hasOwnProperty.call(n.resources, type)) continue;
-      const li = document.createElement('li');
-      li.textContent = `${type}: ${n.resources[type]}`;
-      resList.appendChild(li);
+      if (Object.keys(resources).length > 0) {
+        for (const type in resources) {
+          const li = document.createElement('li');
+          li.textContent = `${type}: ${resources[type]}`;
+          resList.appendChild(li);
+        }
+      } else {
+        const li = document.createElement('li');
+        li.textContent = 'No resources';
+        resList.appendChild(li);
+      }
     }
-  } else {
-    const li = document.createElement('li');
-    li.textContent = 'No resources';
-    resList.appendChild(li);
-  }
-}
 
-
-    // display all nations live
     nationsRef.on('value', snap => {
       const data = snap.val() || {};
       const out = [];
       for (const uid in data) {
         const n = data[uid];
         let resText = '';
-        if (n.resources) {
+        if (typeof n.resources === 'number') {
+          resText = `gold:${n.resources}`;
+        } else if (n.resources && typeof n.resources === 'object') {
           resText = Object.entries(n.resources).map(([k,v]) => `${k}:${v}`).join(', ');
         }
-        out.push(`<div>${n.name} | Pop:${n.population} | Res:[${resText}] | Stability:${n.stability}</div>`);
+        out.push(`<div>${n.name} | Pop:${n.population} | Res:${resText} | Stability:${n.stability}</div>`);
         if (uid === myUid) {
           myNationName = n.name;
           updateMyNationDisplay(n);
@@ -262,7 +258,8 @@ function updateMyNationDisplay(n) {
       ref.once('value', snap => {
         const n = snap.val();
         if (!n) return alert('You have no nation yet');
-        if (!n.resources) n.resources = {};
+        if (typeof n.resources === 'number') n.resources = { gold: n.resources };
+        if (!n.resources || typeof n.resources !== 'object') n.resources = {};
         n.resources.gold = (n.resources.gold || 0) + 10;
         n.stability = (n.stability || 0) - 5;
         ref.set(n);
@@ -274,7 +271,8 @@ function updateMyNationDisplay(n) {
       ref.once('value', snap => {
         const n = snap.val();
         if (!n) return alert('You have no nation yet');
-        if (!n.resources) n.resources = {};
+        if (typeof n.resources === 'number') n.resources = { gold: n.resources };
+        if (!n.resources || typeof n.resources !== 'object') n.resources = {};
         n.stability = (n.stability || 0) + 5;
         n.resources.gold = (n.resources.gold || 0) - 5;
         ref.set(n);
@@ -298,7 +296,7 @@ function updateMyNationDisplay(n) {
       document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
     });
 
-    // ---------- TRADING / ECONOMY ----------
+    // ---------- TRADING ----------
     function postTrade() {
       if (!myUid) return alert('Login required to post trades');
       const raw = document.getElementById('tradeAmount').value;
@@ -308,7 +306,8 @@ function updateMyNationDisplay(n) {
       const myRef = nationsRef.child(myUid);
       myRef.transaction(curr => {
         if (curr === null) return;
-        if (!curr.resources) curr.resources = {};
+        if (typeof curr.resources === 'number') curr.resources = { gold: curr.resources };
+        if (!curr.resources || typeof curr.resources !== 'object') curr.resources = {};
         const res = curr.resources.gold || 0;
         if (res < amount) return;
         curr.resources.gold = res - amount;
@@ -351,19 +350,23 @@ function updateMyNationDisplay(n) {
           return;
         }
         if (!committed) {
-          alert('Trade is no longer available (someone else accepted it).');
+          alert('Trade is no longer available.');
           return;
         }
-        const added = snap.val().amount || 0;
-        const myRef = nationsRef.child(myUid);
-        myRef.transaction(n => {
-          if (n === null) return;
-          if (!n.resources) n.resources = {};
-          n.resources.gold = (n.resources.gold || 0) + added;
-          return n;
-        }, (e2) => {
-          if (e2) console.error('Error crediting resources:', e2);
-          messagesRef.push({ uid: myUid, name: myNationName || 'Unknown', text: `accepted ${snap.val().fromNation}'s offer of ${added} gold.`, t: Date.now() });
+        const trade = snap.val();
+        const buyerRef = nationsRef.child(myUid);
+        buyerRef.transaction(buyer => {
+          if (buyer === null) return;
+          if (typeof buyer.resources === 'number') buyer.resources = { gold: buyer.resources };
+          if (!buyer.resources || typeof buyer.resources !== 'object') buyer.resources = {};
+          buyer.resources.gold = (buyer.resources.gold || 0) + (trade.amount || 0);
+          return buyer;
+        });
+        messagesRef.push({
+          uid: myUid,
+          name: myNationName || 'Unknown',
+          text: `accepted ${trade.fromNation}'s offer of ${trade.amount} gold.`,
+          t: Date.now()
         });
       });
     }
@@ -379,7 +382,7 @@ function updateMyNationDisplay(n) {
           const acceptBtn = showAccept ? `<button onclick="acceptTrade('${id}')">Accept</button>` : '<span class="small">your offer</span>';
           out.push(`<div class="tradeRow"><b>${t.fromNation}</b> selling <b>${t.amount}</b> gold — ${acceptBtn}</div>`);
         } else {
-          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> sold ${t.amount} gold to ${t.acceptedByNation || t.acceptedByUid} (accepted)</div>`);
+          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> sold ${t.amount} to ${t.acceptedByNation || t.acceptedByUid} (accepted)</div>`);
         }
       });
       document.getElementById('tradeList').innerHTML = out.join('') || '<i>No trades posted.</i>';
@@ -389,5 +392,6 @@ function updateMyNationDisplay(n) {
   </script>
 </body>
 </html>
+
 
 
