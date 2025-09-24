@@ -56,7 +56,9 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
           <p>Resources:</p>
           <ul id="myNationResources"></ul>
           <button onclick="collectTaxes()">💰 Collect Taxes (+10 gold, -5 stability)</button>
-          <button onclick="boostWelfare()">❤️ Boost Welfare (+5 stability, -5 gold)</button>
+          <button onclick="boostWelfare()">❤️ Boost Welfare (+5 stability, -12 gold)</button>
+          <button onclick="recruitMilitary()">🪖 Recruit Military (+10 military, -3 gold)</button>
+          <button onclick="buildResource()">🏗️ Harvest Wood (+10 wood, -5 gold)</button>
         </div>
         <h4>All Nations</h4>
         <div id="nations"></div>
@@ -181,6 +183,84 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
         document.getElementById('gameUI').style.display = 'none';
       }
     });
+
+    
+    function collectTaxes() {
+  if (!myUid) return alert('Not logged in');
+  const ref = nationsRef.child(myUid);
+
+  ref.once('value', snap => {
+    const n = snap.val();
+    if (!n) return alert('You have no nation yet');
+
+    if (typeof n.resources === 'number') n.resources = { gold: n.resources };
+    if (!n.resources || typeof n.resources !== 'object') n.resources = {};
+
+    // --- Base effect ---
+    n.resources.gold = (n.resources.gold || 0) + 10;
+    n.stability = (n.stability || 0) - 5;
+
+    // --- Population change based on stability ---
+    if (n.stability >= 60) n.population += 2;
+    else if (n.stability <= 30) n.population = Math.max(0, n.population - 2);
+
+    // --- Military recruitment: 10% of collected gold converts to military ---
+    const newMilitary = Math.floor(10 * 0.1);
+    n.resources.military = (n.resources.military || 0) + newMilitary;
+
+    // --- Random event: 10% chance of revolt ---
+    if (Math.random() < 0.1) {
+      const revoltLoss = Math.min(n.population, 5);
+      n.population -= revoltLoss;
+      n.stability = Math.max(0, n.stability - 10);
+      messagesRef.push({
+        uid: myUid,
+        name: n.name,
+        text: `⚠️ A small revolt occurred! Lost ${revoltLoss} population and -10 stability.`,
+        t: Date.now()
+      });
+    }
+
+    ref.set(n);
+  });
+}
+
+function boostWelfare() {
+  if (!myUid) return alert('Not logged in');
+  const ref = nationsRef.child(myUid);
+
+  ref.once('value', snap => {
+    const n = snap.val();
+    if (!n) return alert('You have no nation yet');
+
+    if (typeof n.resources === 'number') n.resources = { gold: n.resources };
+    if (!n.resources || typeof n.resources !== 'object') n.resources = {};
+
+    // --- Base effect ---
+    n.stability = (n.stability || 0) + 5;
+    n.resources.gold = (n.resources.gold || 0) - 5;
+
+    // --- Population growth bonus ---
+    if (n.stability >= 70) n.population += 2;
+    else if (n.stability <= 30) n.population = Math.max(0, n.population - 1);
+
+    // --- Random resource bonus: 10% chance to gain +5 of a random resource ---
+    if (Math.random() < 0.1) {
+      const resourceTypes = ['wood','iron','oil','uranium'];
+      const r = resourceTypes[Math.floor(Math.random() * resourceTypes.length)];
+      n.resources[r] = (n.resources[r] || 0) + 5;
+      messagesRef.push({
+        uid: myUid,
+        name: n.name,
+        text: `✨ Your welfare program discovered extra ${r}! +5 ${r}.`,
+        t: Date.now()
+      });
+    }
+
+    ref.set(n);
+  });
+}
+
 
     // ---------- NATION CREATION (seed full resources) ----------
     function createNation() {
