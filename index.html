@@ -201,21 +201,38 @@ h1 { color:#ffd54f; margin:0 0 12px 0; }
     }
 
     // helper to update own nation display
-    function updateMyNationDisplay(n) {
-      document.getElementById('myNationName').innerText = n.name;
-      document.getElementById('myNationPop').innerText = n.population;
-      document.getElementById('myNationStab').innerText = n.stability;
+    // helper to update own nation display (replace your existing function)
+function updateMyNationDisplay(n) {
+  console.log('updateMyNationDisplay called with:', n); // debug: check in browser console
 
-      const resList = document.getElementById('myNationResources');
-      resList.innerHTML = '';
-      if (n.resources) {
-        for (const [type, amount] of Object.entries(n.resources)) {
-          const li = document.createElement('li');
-          li.textContent = `${type}: ${amount}`;
-          resList.appendChild(li);
-        }
-      }
+  // name / pop / stab elements
+  const nameEl = document.getElementById('myNationName');
+  const popEl = document.getElementById('myNationPop');
+  const stabEl = document.getElementById('myNationStab');
+  const resList = document.getElementById('myNationResources');
+
+  nameEl.innerText = (n && n.name) ? n.name : '';
+  popEl.innerText = (n && typeof n.population !== 'undefined') ? n.population : '';
+  stabEl.innerText = (n && typeof n.stability !== 'undefined') ? n.stability : '';
+
+  // clear existing list
+  resList.innerHTML = '';
+
+  // render resources safely
+  if (n && n.resources && Object.keys(n.resources).length > 0) {
+    for (const type in n.resources) {
+      if (!Object.prototype.hasOwnProperty.call(n.resources, type)) continue;
+      const li = document.createElement('li');
+      li.textContent = `${type}: ${n.resources[type]}`;
+      resList.appendChild(li);
     }
+  } else {
+    const li = document.createElement('li');
+    li.textContent = 'No resources';
+    resList.appendChild(li);
+  }
+}
+
 
     // display all nations live
     nationsRef.on('value', snap => {
