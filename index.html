@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -7,14 +8,15 @@
     #messages, #nations { height: 200px; overflow-y: auto; border: 1px solid #555; padding: 5px; margin-bottom: 10px; }
     input, button { margin: 5px; padding: 5px; }
     .nation { border-bottom: 1px solid #333; padding: 4px; }
+    #authUI { border: 1px solid #555; padding: 5px; margin-bottom: 10px; }
   </style>
 </head>
 <body>
   <h1>🌍 Firebase Political MMO</h1>
 
-  <!-- Authentication UI -->
+  <!-- Login/Register -->
   <div id="authUI">
-    <h2>Login / Register</h2>
+    <h3>Login / Register</h3>
     <input type="email" id="emailInput" placeholder="Email">
     <input type="password" id="passwordInput" placeholder="Password">
     <button onclick="register()">Register</button>
@@ -73,14 +75,13 @@
     const nationsRef = db.ref("nations");
     const messagesRef = db.ref("messages");
 
-    let myUserId = null; // UID of logged-in user
-    let myNationName = null; // To display in chat
+    let myUserId = null;
+    let myNationName = null;
 
-    // ---------------- Authentication Functions ----------------
+    // ---------------- Auth Functions ----------------
     function register() {
       const email = document.getElementById("emailInput").value;
       const password = document.getElementById("passwordInput").value;
-
       if (!email || !password) return alert("Enter email and password");
 
       auth.createUserWithEmailAndPassword(email, password)
@@ -94,7 +95,6 @@
     function login() {
       const email = document.getElementById("emailInput").value;
       const password = document.getElementById("passwordInput").value;
-
       if (!email || !password) return alert("Enter email and password");
 
       auth.signInWithEmailAndPassword(email, password)
@@ -126,17 +126,24 @@
       const name = document.getElementById("nationNameInput").value.trim();
       if (!name) return alert("Enter a nation name");
 
-      const nation = {
-        name: name,
-        population: 100,
-        resources: 50,
-        stability: 70
-      };
+      // Check if nation name is already taken
+      nationsRef.orderByChild("name").equalTo(name).once("value", snapshot => {
+        if (snapshot.exists()) {
+          alert("That nation name is already taken! Choose another.");
+        } else {
+          const nation = {
+            name: name,
+            population: 100,
+            resources: 50,
+            stability: 70
+          };
 
-      nationsRef.child(myUserId).set(nation, () => {
-        myNationName = name;
-        document.getElementById("nationSetup").style.display = "none";
-        document.getElementById("myNationContainer").style.display = "block";
+          nationsRef.child(myUserId).set(nation, () => {
+            myNationName = name;
+            document.getElementById("nationSetup").style.display = "none";
+            document.getElementById("myNationContainer").style.display = "block";
+          });
+        }
       });
     }
 
@@ -185,9 +192,9 @@
       const text = document.getElementById("msgInput").value.trim();
       if (!text) return;
 
-      if (!myNationName) return alert("Nation name not set yet");
+      const nameToUse = myNationName || "Unknown";
 
-      messagesRef.push({ name: myNationName, text });
+      messagesRef.push({ name: nameToUse, text });
       document.getElementById("msgInput").value = "";
     }
 
