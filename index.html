@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Simple Firebase MMO</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; }
+    #messages { height: 300px; overflow-y: scroll; border: 1px solid #555; padding: 5px; }
+    input { margin: 5px; }
+  </style>
+</head>
+<body>
+  <h1>🔥 Simple Firebase MMO</h1>
+  <div id="messages"></div>
+  <input id="nameInput" placeholder="Your name">
+  <input id="msgInput" placeholder="Say something...">
+  <button onclick="sendMessage()">Send</button>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js"></script>
+
+  <script>
+    // Paste your Firebase config here ↓
+    const firebaseConfig = {
+  apiKey: "AIzaSyBAJVns_sxQgyTIv6Psom0zfBfq556L8Fk",
+  authDomain: "simple-mmo-f0584.firebaseapp.com",
+  databaseURL: "https://simple-mmo-f0584-default-rtdb.firebaseio.com",
+  projectId: "simple-mmo-f0584",
+  storageBucket: "simple-mmo-f0584.firebasestorage.app",
+  messagingSenderId: "428789480488",
+  appId: "1:428789480488:web:6172fd10f5088c068fc91d"
+};
+
+    // Initialize
+    const app = firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const messagesRef = db.ref("messages");
+
+    // Send message
+    function sendMessage() {
+      const name = document.getElementById("nameInput").value || "anon";
+      const text = document.getElementById("msgInput").value;
+      if (text.trim() === "") return;
+      messagesRef.push({ name, text });
+      document.getElementById("msgInput").value = "";
+    }
+
+    // Listen for new messages
+    messagesRef.on("child_added", snapshot => {
+      const msg = snapshot.val();
+      const div = document.createElement("div");
+      div.textContent = msg.name + ": " + msg.text;
+      document.getElementById("messages").appendChild(div);
+    });
+  </script>
+</body>
+</html>
