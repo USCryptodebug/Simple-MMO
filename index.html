@@ -125,6 +125,8 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
       appId: "1:428789480488:web:6172fd10f5088c068fc91d"
     };
 
+    
+
     firebase.initializeApp(firebaseConfig);
     const auth = firebase.auth();
     const db = firebase.database();
@@ -175,6 +177,10 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
             document.getElementById('myNationContainer').style.display = 'none';
           }
         });
+        // 5min interval for auto update
+        setInterval(autoResourceUpdate, 300000); // every 5 minutes (300,000 ms)
+        
+
       } else {
         myUid = null;
         myNationName = null;
@@ -183,6 +189,34 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
         document.getElementById('gameUI').style.display = 'none';
       }
     });
+
+    function autoResourceUpdate() {
+  if (!myUid) return; // no user logged in
+
+  const ref = nationsRef.child(myUid);
+
+  ref.transaction(n => {
+    if (!n) return;
+
+    // Normalize resources if needed
+    if (typeof n.resources === 'number') n.resources = { gold: n.resources };
+    if (!n.resources || typeof n.resources !== 'object') n.resources = {};
+
+    // --- Add population and resources ---
+    n.population = (n.population || 0) + 5;         // +5 population
+    n.resources.gold = (n.resources.gold || 0) + 10; // +10 gold
+    n.resources.wood = (n.resources.wood || 0) + 5;  // +5 wood
+
+    // Optional: check game over
+    if (n.stability <= 0) {
+      alert(`💥 Game Over! Your nation ${n.name} collapsed due to low stability.`);
+      document.getElementById('myNationContainer').querySelectorAll('button').forEach(btn => btn.disabled = true);
+    }
+
+    return n;
+  });
+}
+
 
     function recruitMilitary() {
   if (!myUid) return alert('Not logged in');
