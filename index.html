@@ -1,122 +1,77 @@
-
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Firebase Political MMO</title>
+  <meta charset="utf-8" />
+  <title>Firebase Political MMO — Trading Fix</title>
   <style>
-    body { font-family: sans-serif; background: #111; color: #eee; }
-    #messages, #nations { height: 200px; overflow-y: auto; border: 1px solid #555; padding: 5px; margin-bottom: 10px; }
-    input, button { margin: 5px; padding: 5px; }
-    .nation { border-bottom: 1px solid #333; padding: 4px; }
-    #authUI { border: 1px solid #555; padding: 5px; margin-bottom: 10px; }
+    body { font-family: sans-serif; background:#111; color:#eee; padding:12px; }
+    .col { display:flex; gap:12px; }
+    .box { background:#1a1a1a; padding:12px; border-radius:6px; flex:1; min-width:260px; }
+    input,button { padding:8px; margin:6px 0; width:100%; box-sizing:border-box; }
+    #nations, #messages, #tradeList { height:200px; overflow:auto; border:1px solid #333; padding:8px; background:#0f0f0f; }
+    h1 { color:#ffd54f; margin:0 0 12px 0; }
+    .small { font-size:0.9rem; color:#aaa; }
+    .tradeRow { margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid #222; }
   </style>
 </head>
 <body>
-  <h1>🌍 Firebase Political MMO</h1>
+  <h1>🌍 Firebase Political MMO — Trading</h1>
 
-  <!-- Login/Register -->
-  <div id="authUI">
+  <!-- AUTH -->
+  <div class="box" id="authUI">
     <h3>Login / Register</h3>
     <input type="email" id="emailInput" placeholder="Email">
     <input type="password" id="passwordInput" placeholder="Password">
     <button onclick="register()">Register</button>
     <button onclick="login()">Login</button>
+    <p class="small" id="authStatus">Not logged in</p>
   </div>
 
-  <!-- Game UI -->
-  <div id="gameUI" style="display:none;">
-    <!-- Nation Creation -->
-    <div id="nationSetup">
-      <input id="nationNameInput" placeholder="Enter your nation's name">
-      <button onclick="createNation()">Create Nation</button>
+  <!-- GAME UI (hidden until login) -->
+  <div id="gameUI" style="display:none; margin-top:12px;">
+    <div class="col">
+      <div class="box">
+        <h3>Your Nation</h3>
+        <div id="nationSetup">
+          <input id="nationNameInput" placeholder="Enter your nation's name">
+          <button onclick="createNation()">Create Nation</button>
+        </div>
+        <div id="myNationContainer" style="display:none;">
+          <p id="myNation"></p>
+          <button onclick="collectTaxes()">💰 Collect Taxes (+10 res, -5 stability)</button>
+          <button onclick="boostWelfare()">❤️ Boost Welfare (+5 stability, -5 res)</button>
+        </div>
+        <h4>All Nations</h4>
+        <div id="nations"></div>
+      </div>
+
+      <div class="box">
+        <h3>World Chat</h3>
+        <div id="messages"></div>
+        <input id="msgInput" placeholder="Say something...">
+        <button onclick="sendMessage()">Send</button>
+
+        <h3 style="margin-top:12px">Economy / Trades</h3>
+        <input id="tradeAmount" type="number" placeholder="Amount (resources)">
+        <button onclick="postTrade()">Post Offer (sell resources)</button>
+        <p class="small">Posting an offer subtracts resources immediately from your nation (prevent double-spend).</p>
+      </div>
     </div>
 
-    <!-- Nation Actions -->
-    <div id="myNationContainer" style="display:none;">
-      <h2>Your Nation</h2>
-      <div id="myNation"></div>
-      <button onclick="collectTaxes()">💰 Collect Taxes</button>
-      <button onclick="boostWelfare()">❤️ Boost Welfare</button>
+    <div style="margin-top:12px" class="box">
+      <h3>Trade Board</h3>
+      <div id="tradeList"></div>
+      <p class="small">Click Accept to take an offer (resources will be transferred to you).</p>
     </div>
-
-    <!-- All Nations -->
-    <h2>All Nations</h2>
-    <div id="nations"></div>
-
-    <!-- Chat -->
-    <h2>Global Chat</h2>
-    <div id="messages"></div>
-    <input id="msgInput" placeholder="Say something...">
-    <button onclick="sendMessage()">Send</button>
   </div>
 
-    <!-- Economy -->
-    <h3>World Economy</h3>
-<input id="offerInput" placeholder="What you offer">
-<input id="wantInput" placeholder="What you want">
-<button onclick="postTrade()">Post Trade</button>
-
-<div id="tradeList"></div>
-  
-  <!-- Firebase SDK -->
+  <!-- Firebase v8 (compat) -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-  <script>
-// Reference to economy trades
-const tradesRef = db.ref("economy");
-
-// Post a new trade
-function postTrade() {
-  const offer = document.getElementById("offerInput").value;
-  const want = document.getElementById("wantInput").value;
-
-  if (!offer || !want) {
-    alert("Please enter both offer and want.");
-    return;
-  }
-
-  tradesRef.push({
-    fromNation: currentNation || "Guest",
-    offer: offer,
-    want: want,
-    acceptedBy: ""
-  });
-
-  document.getElementById("offerInput").value = "";
-  document.getElementById("wantInput").value = "";
-}
-
-// Accept a trade
-function acceptTrade(id) {
-  const tradeRef = db.ref("economy/" + id);
-  tradeRef.once("value", snapshot => {
-    const trade = snapshot.val();
-    if (trade && !trade.acceptedBy) {
-      tradeRef.update({ acceptedBy: currentNation || "Guest" });
-    }
-  });
-}
-
-// Listen for trades
-tradesRef.on("value", snapshot => {
-  let html = "<b>Available Trades:</b><br>";
-  snapshot.forEach(child => {
-    const t = child.val();
-    if (t.acceptedBy === "") {
-      html += `${t.fromNation} offers ${t.offer} for ${t.want} 
-               <button onclick="acceptTrade('${child.key}')">Accept</button><br>`;
-    } else {
-      html += `${t.fromNation}'s trade already accepted by ${t.acceptedBy}<br>`;
-    }
-  });
-  document.getElementById("tradeList").innerHTML = html;
-});
-  </script>
-  
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
   <script>
-    // ---------------- Firebase Config ----------------
+    // === Firebase config - your project (you provided earlier) ===
     const firebaseConfig = {
       apiKey: "AIzaSyBAJVns_sxQgyTIv6Psom0zfBfq556L8Fk",
       authDomain: "simple-mmo-f0584.firebaseapp.com",
@@ -127,143 +82,263 @@ tradesRef.on("value", snapshot => {
       appId: "1:428789480488:web:6172fd10f5088c068fc91d"
     };
 
-    // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
     const auth = firebase.auth();
+    const db = firebase.database();
 
-    const nationsRef = db.ref("nations");
-    const messagesRef = db.ref("messages");
+    const nationsRef = db.ref('nations');
+    const messagesRef = db.ref('messages');
+    const tradesRef = db.ref('economy'); // trades stored under /economy/{tradeId}
 
-    let myUserId = null;
+    let myUid = null;
     let myNationName = null;
 
-    // ---------------- Auth Functions ----------------
+    // ---------- AUTH ----------
     function register() {
-      const email = document.getElementById("emailInput").value;
-      const password = document.getElementById("passwordInput").value;
-      if (!email || !password) return alert("Enter email and password");
-
-      auth.createUserWithEmailAndPassword(email, password)
-        .then(userCredential => {
-          myUserId = userCredential.user.uid;
-          showGameUI();
-        })
-        .catch(error => alert("Registration error: " + error.message));
+      const email = document.getElementById('emailInput').value;
+      const pw = document.getElementById('passwordInput').value;
+      if (!email || !pw) return alert('Enter email and password');
+      firebase.auth().createUserWithEmailAndPassword(email, pw)
+        .catch(e => alert('Register error: ' + e.message));
     }
 
     function login() {
-      const email = document.getElementById("emailInput").value;
-      const password = document.getElementById("passwordInput").value;
-      if (!email || !password) return alert("Enter email and password");
-
-      auth.signInWithEmailAndPassword(email, password)
-        .then(userCredential => {
-          myUserId = userCredential.user.uid;
-          showGameUI();
-        })
-        .catch(error => alert("Login error: " + error.message));
+      const email = document.getElementById('emailInput').value;
+      const pw = document.getElementById('passwordInput').value;
+      if (!email || !pw) return alert('Enter email and password');
+      firebase.auth().signInWithEmailAndPassword(email, pw)
+        .catch(e => alert('Login error: ' + e.message));
     }
 
-    function showGameUI() {
-      document.getElementById("authUI").style.display = "none";
-      document.getElementById("gameUI").style.display = "block";
-
-      // Check if nation exists
-      nationsRef.child(myUserId).once("value", snap => {
-        if (snap.exists()) {
-          myNationName = snap.val().name;
-          document.getElementById("nationSetup").style.display = "none";
-          document.getElementById("myNationContainer").style.display = "block";
-        } else {
-          document.getElementById("nationSetup").style.display = "block";
-        }
-      });
+    function logout() {
+      firebase.auth().signOut();
     }
 
-    // ---------------- Nation Creation ----------------
-    function createNation() {
-      const name = document.getElementById("nationNameInput").value.trim();
-      if (!name) return alert("Enter a nation name");
-
-      // Check if nation name is already taken
-      nationsRef.orderByChild("name").equalTo(name).once("value", snapshot => {
-        if (snapshot.exists()) {
-          alert("That nation name is already taken! Choose another.");
-        } else {
-          const nation = {
-            name: name,
-            population: 100,
-            resources: 50,
-            stability: 70
-          };
-
-          nationsRef.child(myUserId).set(nation, () => {
-            myNationName = name;
-            document.getElementById("nationSetup").style.display = "none";
-            document.getElementById("myNationContainer").style.display = "block";
-          });
-        }
-      });
-    }
-
-    // ---------------- Nation Actions ----------------
-    function collectTaxes() {
-      nationsRef.child(myUserId).once("value", snap => {
-        const n = snap.val();
-        n.resources += 10;
-        n.stability -= 5;
-        nationsRef.child(myUserId).set(n);
-      });
-    }
-
-    function boostWelfare() {
-      nationsRef.child(myUserId).once("value", snap => {
-        const n = snap.val();
-        n.stability += 5;
-        n.resources -= 5;
-        nationsRef.child(myUserId).set(n);
-      });
-    }
-
-    // ---------------- Display Nations ----------------
-    nationsRef.on("value", snap => {
-      const data = snap.val() || {};
-      const nationsDiv = document.getElementById("nations");
-      nationsDiv.innerHTML = "";
-
-      for (const id in data) {
-        const n = data[id];
-        const div = document.createElement("div");
-        div.className = "nation";
-        div.textContent = `${n.name} | Pop: ${n.population} | Res: ${n.resources} | Stability: ${n.stability}`;
-        nationsDiv.appendChild(div);
-
-        if (id === myUserId) {
-          document.getElementById("myNation").textContent =
-            `${n.name} | Pop: ${n.population} | Res: ${n.resources} | Stability: ${n.stability}`;
-          myNationName = n.name;
-        }
+    firebase.auth().onAuthStateChanged(user => {
+      if (user) {
+        myUid = user.uid;
+        document.getElementById('authStatus').innerText = 'Logged in as ' + (user.email || user.uid);
+        document.getElementById('authUI').style.display = 'none';
+        document.getElementById('gameUI').style.display = 'block';
+        // check if user already has a nation
+        nationsRef.child(myUid).once('value', snap => {
+          if (snap.exists()) {
+            myNationName = snap.val().name;
+            document.getElementById('nationSetup').style.display = 'none';
+            document.getElementById('myNationContainer').style.display = 'block';
+            updateMyNationDisplay(snap.val());
+          } else {
+            document.getElementById('nationSetup').style.display = 'block';
+            document.getElementById('myNationContainer').style.display = 'none';
+          }
+        });
+      } else {
+        myUid = null;
+        myNationName = null;
+        document.getElementById('authStatus').innerText = 'Not logged in';
+        document.getElementById('authUI').style.display = 'block';
+        document.getElementById('gameUI').style.display = 'none';
       }
     });
 
-    // ---------------- Chat ----------------
-    function sendMessage() {
-      const text = document.getElementById("msgInput").value.trim();
-      if (!text) return;
+    // ---------- NATION CREATION (unique name, case-insensitive) ----------
+    function createNation() {
+      const name = document.getElementById('nationNameInput').value.trim();
+      if (!name) return alert('Enter a nation name');
 
-      const nameToUse = myNationName || "Unknown";
+      const name_lc = name.toLowerCase();
 
-      messagesRef.push({ name: nameToUse, text });
-      document.getElementById("msgInput").value = "";
+      // check uniqueness using orderByChild('name_lc').equalTo(name_lc)
+      nationsRef.orderByChild('name_lc').equalTo(name_lc).once('value', snapshot => {
+        if (snapshot.exists()) {
+          alert('That nation name is already taken (case-insensitive). Choose another.');
+          return;
+        }
+
+        const init = {
+          name: name,
+          name_lc: name_lc,
+          population: 100,
+          resources: 50,
+          stability: 70,
+          ownerUid: myUid
+        };
+
+        nationsRef.child(myUid).set(init, err => {
+          if (err) alert('Error creating nation: ' + err.message);
+          else {
+            myNationName = name;
+            document.getElementById('nationSetup').style.display = 'none';
+            document.getElementById('myNationContainer').style.display = 'block';
+            updateMyNationDisplay(init);
+          }
+        });
+      });
     }
 
-    messagesRef.on("child_added", snap => {
-      const msg = snap.val();
-      const div = document.createElement("div");
-      div.textContent = msg.name + ": " + msg.text;
-      document.getElementById("messages").appendChild(div);
+    // helper to update own nation display
+    function updateMyNationDisplay(n) {
+      document.getElementById('myNation').innerText = `${n.name} | Pop: ${n.population} | Res: ${n.resources} | Stability: ${n.stability}`;
+    }
+
+    // display all nations live
+    nationsRef.on('value', snap => {
+      const data = snap.val() || {};
+      const out = [];
+      for (const uid in data) {
+        const n = data[uid];
+        out.push(`<div>${n.name} | Pop:${n.population} | Res:${n.resources} | Stability:${n.stability}</div>`);
+        // if it's me update local display & name
+        if (uid === myUid) {
+          myNationName = n.name;
+          updateMyNationDisplay(n);
+          document.getElementById('nationSetup').style.display = 'none';
+          document.getElementById('myNationContainer').style.display = 'block';
+        }
+      }
+      document.getElementById('nations').innerHTML = out.join('');
     });
+
+    // ---------- NATION ACTIONS ----------
+    function collectTaxes() {
+      if (!myUid) return alert('Not logged in');
+      const ref = nationsRef.child(myUid);
+      // simple read-modify-set (OK for prototype)
+      ref.once('value', snap => {
+        const n = snap.val();
+        if (!n) return alert('You have no nation yet');
+        n.resources = (n.resources || 0) + 10;
+        n.stability = (n.stability || 0) - 5;
+        ref.set(n);
+      });
+    }
+    function boostWelfare() {
+      if (!myUid) return alert('Not logged in');
+      const ref = nationsRef.child(myUid);
+      ref.once('value', snap => {
+        const n = snap.val();
+        if (!n) return alert('You have no nation yet');
+        n.stability = (n.stability || 0) + 5;
+        n.resources = (n.resources || 0) - 5;
+        ref.set(n);
+      });
+    }
+
+    // ---------- CHAT ----------
+    function sendMessage() {
+      if (!myUid) return alert('Login required to chat');
+      const text = document.getElementById('msgInput').value.trim();
+      if (!text) return;
+      const name = myNationName || 'Unknown';
+      messagesRef.push({ uid: myUid, name: name, text: text, t: Date.now() });
+      document.getElementById('msgInput').value = '';
+    }
+    messagesRef.limitToLast(200).on('child_added', snap => {
+      const m = snap.val();
+      const div = document.createElement('div');
+      div.textContent = `${m.name}: ${m.text}`;
+      document.getElementById('messages').appendChild(div);
+      document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+    });
+
+    // ---------- TRADING / ECONOMY ----------
+    // Post an offer — subtract seller's resources atomically using a transaction, then create trade
+    function postTrade() {
+      if (!myUid) return alert('Login required to post trades');
+      const raw = document.getElementById('tradeAmount').value;
+      const amount = parseInt(raw, 10);
+      if (!amount || amount <= 0) return alert('Enter a positive amount of resources to sell');
+
+      const myRef = nationsRef.child(myUid);
+      // transaction to subtract resources atomically
+      myRef.transaction(curr => {
+        if (curr === null) {
+          return; // abort
+        }
+        const res = curr.resources || 0;
+        if (res < amount) return; // not enough -> abort
+        curr.resources = res - amount;
+        return curr; // commit
+      }, (err, committed, snap) => {
+        if (err) {
+          alert('Transaction error: ' + err.message);
+          return;
+        }
+        if (!committed) {
+          alert('Not enough resources to post that offer.');
+          return;
+        }
+        // committed: create trade record
+        const myNation = snap.val().name || ('uid:' + myUid);
+        tradesRef.push({
+          fromUid: myUid,
+          fromNation: myNation,
+          amount: amount,
+          status: 'pending',
+          createdAt: Date.now()
+        });
+      });
+    }
+
+    // Accept a trade: atomically set trade.status='accepted' and add resources to acceptor
+    function acceptTrade(tradeId) {
+      if (!myUid) return alert('Login required to accept trades');
+      const tradeRef = tradesRef.child(tradeId);
+
+      // Step 1: atomically change trade to accepted if still pending
+      tradeRef.transaction(tr => {
+        if (tr === null) return; // no trade
+        if (tr.status !== 'pending') return; // abort, already accepted/rejected
+        tr.status = 'accepted';
+        tr.acceptedByUid = myUid;
+        tr.acceptedByNation = myNationName || ('uid:' + myUid);
+        tr.acceptedAt = Date.now();
+        return tr;
+      }, (err, committed, snap) => {
+        if (err) {
+          alert('Trade transaction failed: ' + err.message);
+          return;
+        }
+        if (!committed) {
+          alert('Trade is no longer available (someone else accepted it).');
+          return;
+        }
+        // Now add resources to acceptor atomically
+        const added = snap.val().amount || 0;
+        const myRef = nationsRef.child(myUid);
+        myRef.transaction(n => {
+          if (n === null) return; // shouldn't happen
+          n.resources = (n.resources || 0) + added;
+          return n;
+        }, (e2, c2, s2) => {
+          if (e2) console.error('Error crediting resources:', e2);
+          // optional: record acceptance event in messages
+          messagesRef.push({ uid: myUid, name: myNationName || 'Unknown', text: `accepted ${snap.val().fromNation}'s offer of ${added} resources.`, t: Date.now() });
+        });
+      });
+    }
+
+    // Show trade list live
+    tradesRef.on('value', snap => {
+      const out = [];
+      snap.forEach(child => {
+        const t = child.val();
+        const id = child.key;
+        if (!t) return;
+        if (t.status === 'pending') {
+          // only show Accept button if not your own offer
+          const showAccept = (t.fromUid !== myUid);
+          const acceptBtn = showAccept ? `<button onclick="acceptTrade('${id}')">Accept</button>` : '<span class="small">your offer</span>';
+          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> selling <b>${t.amount}</b> resources — ${acceptBtn}</div>`);
+        } else {
+          out.push(`<div class="tradeRow"><b>${t.fromNation}</b> sold ${t.amount} to ${t.acceptedByNation || t.acceptedByUid} (accepted)</div>`);
+        }
+      });
+      document.getElementById('tradeList').innerHTML = out.join('') || '<i>No trades posted.</i>';
+    });
+
+    // Expose logout for convenience (button present)
+    window.logout = logout;
   </script>
 </body>
 </html>
