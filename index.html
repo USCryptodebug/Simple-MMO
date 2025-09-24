@@ -184,6 +184,45 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
       }
     });
 
+    function recruitMilitary() {
+  if (!myUid) return alert('Not logged in');
+  const ref = nationsRef.child(myUid);
+
+  ref.once('value', snap => {
+    const n = snap.val();
+    if (!n) return alert('You have no nation yet');
+
+    if (typeof n.resources === 'number') n.resources = { gold: n.resources };
+    if (!n.resources || typeof n.resources !== 'object') n.resources = {};
+
+    if ((n.resources.gold || 0) < 3) return alert('Not enough gold to recruit military');
+    n.resources.gold -= 3;
+    n.resources.military = (n.resources.military || 0) + 10;
+
+    ref.set(n);
+  });
+}
+
+function buildResource() {
+  if (!myUid) return alert('Not logged in');
+  const ref = nationsRef.child(myUid);
+
+  ref.once('value', snap => {
+    const n = snap.val();
+    if (!n) return alert('You have no nation yet');
+
+    if (typeof n.resources === 'number') n.resources = { gold: n.resources };
+    if (!n.resources || typeof n.resources !== 'object') n.resources = {};
+
+    if ((n.resources.gold || 0) < 5) return alert('Not enough gold to harvest wood');
+    n.resources.gold -= 5;
+    n.resources.wood = (n.resources.wood || 0) + 10;
+
+    ref.set(n);
+  });
+}
+
+
     
     function collectTaxes() {
   if (!myUid) return alert('Not logged in');
