@@ -209,7 +209,8 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
       }
     });
 
-    function autoResourceUpdate() {
+<script>
+function autoResourceUpdate() {
   if (!myUid) return; // no user logged in
 
   const ref = nationsRef.child(myUid);
@@ -225,18 +226,21 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
     n.population = (n.population || 0) + 5;         // +5 population
     n.resources.gold = (n.resources.gold || 0) + 10; // +10 gold
     n.resources.wood = (n.resources.wood || 0) + 5;  // +5 wood
-    n.resources.oil = (n.resources.oil || 0) + 2;  //. +2 oil
-    n.resources.iron [n.resources.iron || 0) + 3;  // +3 iron
+    n.resources.oil = (n.resources.oil || 0) + 2;    // +2 oil
+    n.resources.iron = (n.resources.iron || 0) + 3;  // +3 iron
 
     // Optional: check game over
     if (n.stability <= 0) {
       alert(`💥 Game Over! Your nation ${n.name} collapsed due to low stability.`);
-      document.getElementById('myNationContainer').querySelectorAll('button').forEach(btn => btn.disabled = true);
+      const container = document.getElementById('myNationContainer');
+      if (container) container.querySelectorAll('button').forEach(btn => btn.disabled = true);
     }
 
     return n;
   });
 }
+</script>
+
 
 
     function recruitMilitary() {
