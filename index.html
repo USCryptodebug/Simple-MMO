@@ -3,7 +3,7 @@
 <head>
   
   <meta charset="utf-8" />
-  <title>Firebase Political MMO — Trading Fix</title>
+  <title>Allies & Enemies Online</title>
   <style>
 body {
   font-family: sans-serif;
@@ -28,7 +28,7 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
   
 </head>
 <body>
-  <h1>🌍 Firebase Political MMO — Trading</h1>
+  <h1>🌍 Allies & Enemies Online</h1>
 
   <!-- AUTH -->
   <div class="box" id="authUI">
@@ -58,16 +58,17 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
           <button onclick="collectTaxes()">💰 Collect Taxes (+10 gold, -5 stability)</button>
           <button onclick="boostWelfare()">❤️ Boost Welfare (+5 stability, -12 gold)</button>
           <button onclick="recruitMilitary()">🪖 Recruit Military (+10 military, -3 gold)</button>
-          <button onclick="buildResource()">🏗️ Harvest Wood (+10 wood, -5 gold)</button>
+          <button onclick="harvestWood()">🏗️ Harvest Wood (+10 wood, -5 gold)</button>
+          
         </div>
         <h4>All Nations</h4>
         <div id="nations"></div>
       </div>
 
       <div class="box">
-        <h3>World Chat</h3>
+        <h3>World Council</h3>
         <div id="messages"></div>
-        <input id="msgInput" placeholder="Say something...">
+        <input id="msgInput" placeholder="Enter message...">
         <button onclick="sendMessage()">Send</button>
 
         <h3 style="margin-top:12px">Economy / Trades (Create Offer)</h3>
@@ -97,23 +98,22 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
         <input id="wantAmount" type="number" placeholder="Want amount">
 
         <button onclick="postTrade()">Post Offer</button>
-        <p class="small">Posting an offer subtracts your offered resource immediately (prevents double-spend).</p>
+        <p class="small">(Posting a trade offer subtracts the resource from your inventory and posts it on the "Trade" tab.)</p>
       </div>
     </div>
 
     <div style="margin-top:12px" class="box">
       <h3>Trade Board</h3>
       <div id="tradeList"></div>
-      <p class="small">Click Accept to take an offer (resources will be transferred atomically).</p>
+      <p class="small">Click Accept to take an offer.</p>
     </div>
   </div>
 
-    <!-- ===== War system UI (paste: immediately BEFORE the
-       line <!-- Firebase v8 (compat) -->) ===== -->
+    <!-- ===== War system UI) ===== -->
   <div style="margin-top:12px" class="box">
     <h3>War System</h3>
 
-    <label class="small">Target Nation (exact name)</label>
+    <label class="small">Target Nation (exact name, case insensitive)</label>
     <input id="warTargetInput" placeholder="Enter target nation's name">
     <button onclick="declareWar()">⚔️ Declare War</button>
 
@@ -225,6 +225,8 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
     n.population = (n.population || 0) + 5;         // +5 population
     n.resources.gold = (n.resources.gold || 0) + 10; // +10 gold
     n.resources.wood = (n.resources.wood || 0) + 5;  // +5 wood
+    n.resources.oil = (n.resources.oil || 0) + 2;  //. +2 oil
+    n.resources.iron [n.resources.iron || 0) + 3;  // +3 iron
 
     // Optional: check game over
     if (n.stability <= 0) {
@@ -256,7 +258,7 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
   });
 }
 
-function buildResource() {
+function harvestWood() {
   if (!myUid) return alert('Not logged in');
   const ref = nationsRef.child(myUid);
 
