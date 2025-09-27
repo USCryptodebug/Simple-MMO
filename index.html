@@ -108,6 +108,23 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
     </div>
   </div>
 
+    <!-- ===== War system UI (paste: immediately BEFORE the
+       line <!-- Firebase v8 (compat) -->) ===== -->
+  <div style="margin-top:12px" class="box">
+    <h3>War System</h3>
+
+    <label class="small">Target Nation (exact name)</label>
+    <input id="warTargetInput" placeholder="Enter target nation's name">
+    <button onclick="declareWar()">⚔️ Declare War</button>
+
+    <p class="small">Declaring war costs 10 military (paid immediately). Battles resolve immediately; winners steal a portion of gold and cause casualties.</p>
+
+    <h4>Active Wars</h4>
+    <div id="warList" style="max-height:160px; overflow:auto; border:1px solid #222; padding:8px; background:#0b0b0b;"></div>
+  </div>
+  <!-- ===== /War UI ===== -->
+
+
   <!-- Firebase v8 (compat) -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
@@ -132,6 +149,8 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
     const db = firebase.database();
 
     const nationsRef = db.ref('nations');
+    const warsRef = db.ref('wars'); // wars stored under /wars/{warId}
+
     const messagesRef = db.ref('messages');
     const tradesRef = db.ref('economy'); // trades stored under /economy/{tradeId}
 
@@ -641,6 +660,168 @@ function boostWelfare() {
       });
       document.getElementById('tradeList').innerHTML = out.join('') || '<i>No trades posted.</i>';
     });
+    // ---------- WAR SYSTEM ----------
+// declareWar() finds target by name, charges attacker 10 military, creates a /wars entry, resolves battle
+function declareWar() {
+  if (!myUid) return alert('Login required to declare war');
+  const targetName = document.getElementById('warTargetInput').value.trim();
+  if (!targetName) return alert('Enter a target nation name');
+  const target_lc = targetName.toLowerCase();
+
+  // find target nation
+  nationsRef.orderByChild('name_lc').equalTo(target_lc).once('value', snap => {
+    if (!snap.exists()) return alert('Nation not found (exact name, case-insensitive).');
+    const pairs = Object.entries(snap.val());
+    const targetUid = pairs[0][0];
+    const targetData = pairs[0][1];
+
+    if (targetUid === myUid) return alert('You cannot declare war on yourself.');
+
+    // Charge attacker 10 military atomically
+    const attackerRef = nationsRef.child(myUid);
+    attackerRef.transaction(a => {
+      if (!a) return;
+      if (typeof a.resources === 'number') a.resources = { gold: a.resources };
+      if (!a.resources || typeof a.resources !== 'object') a.resources = {};
+      if ((a.resources.military || 0) < 10) return; // abort
+      a.resources.military = (a.resources.military || 0) - 10;
+      a.stability = Math.max(0, (a.stability || 0) - 5);
+      return a;
+    }, (err, committed, snapAtt) => {
+      if (err) { alert('Error: ' + err.message); return; }
+      if (!committed) { alert('Not enough military to declare war (requires 10).'); return; }
+
+      // create war record
+      const attName = (snapAtt.val() && snapAtt.val().name) || myNationName || 'Attacker';
+      const warObj = {
+        attackerUid: myUid,
+        attackerName: attName,
+        defenderUid: targetUid,
+        defenderName: targetData.name,
+        status: 'ongoing',
+        startedAt: Date.now()
+      };
+      const newWar = warsRef.push(warObj, err2 => {
+        if (err2) return alert('Error creating war: ' + err2.message);
+        messagesRef.push({ uid: myUid, name: attName, text: `⚔️ ${attName} declared war on ${targetData.name}!`, t: Date.now() });
+        // resolve immediately (simple one-shot resolution)
+        resolveWar(newWar.key, warObj.attackerUid, warObj.defenderUid);
+      });
+    });
+  });
+}
+
+// resolveWar() computes strengths, applies casualties and resource transfers, updates /wars
+function resolveWar(warId, attackerUid, defenderUid) {
+  // mark resolving to avoid double-resolve
+  warsRef.child(warId).transaction(w => {
+    if (!w) return;
+    if (w.status !== 'ongoing') return; // already resolved / resolving
+    w.status = 'resolving';
+    return w;
+  }, (err) => {
+    if (err) { console.error('War transaction error', err); return; }
+
+    // load both nations once
+    Promise.all([
+      nationsRef.child(attackerUid).once('value'),
+      nationsRef.child(defenderUid).once('value')
+    ]).then(([aSnap, dSnap]) => {
+      const a = aSnap.val();
+      const d = dSnap.val();
+      if (!a || !d) {
+        warsRef.child(warId).update({ status: 'cancelled', endedAt: Date.now() });
+        messagesRef.push({ uid: attackerUid, name: a ? a.name : 'Unknown', text: `⚠️ War cancelled (missing nation data).`, t: Date.now() });
+        return;
+      }
+
+      // compute simple strength numbers (military + population/10 + iron/5 + randomness)
+      const aMil = (a.resources && a.resources.military) || 0;
+      const dMil = (d.resources && d.resources.military) || 0;
+      const aStr = aMil + Math.floor((a.population || 0) / 10) + Math.floor(((a.resources && a.resources.iron) || 0) / 5) + Math.floor(Math.random() * 20);
+      const dStr = dMil + Math.floor((d.population || 0) / 10) + Math.floor(((d.resources && d.resources.iron) || 0) / 5) + Math.floor(Math.random() * 20);
+      const winner = aStr >= dStr ? 'attacker' : 'defender';
+
+      // simple casualty calculation (bounded)
+      const aLoss = Math.min(aMil, Math.floor(dMil * (0.25 + Math.random() * 0.25)));
+      const dLoss = Math.min(dMil, Math.floor(aMil * (0.25 + Math.random() * 0.25)));
+      const aPopLoss = Math.min(a.population || 0, Math.floor(dMil / 10));
+      const dPopLoss = Math.min(d.population || 0, Math.floor(aMil / 10));
+
+      // apply updates via transactions (best-effort, each side separately)
+      nationsRef.child(attackerUid).transaction(att => {
+        if (!att) return att;
+        if (typeof att.resources === 'number') att.resources = { gold: att.resources };
+        if (!att.resources || typeof att.resources !== 'object') att.resources = {};
+        att.resources.military = Math.max(0, (att.resources.military || 0) - aLoss);
+        att.population = Math.max(0, (att.population || 0) - aPopLoss);
+        att.stability = Math.max(0, (att.stability || 0) - 3);
+        // winner steals small gold share from loser
+        if (winner === 'attacker') {
+          const stolen = Math.floor(((d.resources && d.resources.gold) || 0) * 0.15);
+          att.resources.gold = (att.resources.gold || 0) + stolen;
+        }
+        return att;
+      }, (errA) => { if (errA) console.error('Attacker update error', errA); });
+
+      nationsRef.child(defenderUid).transaction(defn => {
+        if (!defn) return defn;
+        if (typeof defn.resources === 'number') defn.resources = { gold: defn.resources };
+        if (!defn.resources || typeof defn.resources !== 'object') defn.resources = {};
+        defn.resources.military = Math.max(0, (defn.resources.military || 0) - dLoss);
+        defn.population = Math.max(0, (defn.population || 0) - dPopLoss);
+        defn.stability = Math.max(0, (defn.stability || 0) - 7);
+        if (winner === 'defender') {
+          const stolen = Math.floor(((a.resources && a.resources.gold) || 0) * 0.10);
+          defn.resources.gold = (defn.resources.gold || 0) + stolen;
+        }
+        return defn;
+      }, (errD) => { if (errD) console.error('Defender update error', errD); });
+
+      // finalize war record
+      warsRef.child(warId).update({
+        status: 'ended',
+        winner: winner,
+        attackerStrength: aStr,
+        defenderStrength: dStr,
+        attackerCasualties: aLoss,
+        defenderCasualties: dLoss,
+        attackerPopulationLoss: aPopLoss,
+        defenderPopulationLoss: dPopLoss,
+        endedAt: Date.now()
+      });
+
+      // announce result
+      const attName = a.name || 'Attacker';
+      const defName = d.name || 'Defender';
+      const winnerName = winner === 'attacker' ? attName : defName;
+      messagesRef.push({
+        uid: attackerUid,
+        name: 'War System',
+        text: `🏁 War ended: ${attName} vs ${defName}. Winner: ${winnerName}. Casualties — ${attName}: ${aLoss} military, ${aPopLoss} population; ${defName}: ${dLoss} military, ${dPopLoss} population.`,
+        t: Date.now()
+      });
+    }).catch(e => {
+      console.error('resolveWar error', e);
+      warsRef.child(warId).update({ status: 'error', endedAt: Date.now() });
+    });
+  });
+}
+
+// show war list in UI
+warsRef.on('value', snap => {
+  const out = [];
+  snap.forEach(child => {
+    const w = child.val();
+    if (!w) return;
+    if (w.status === 'ongoing' || w.status === 'resolving') {
+      out.push(`<div class="tradeRow"><b>${w.attackerName}</b> ⚔ <b>${w.defenderName}</b> — <span class="small">${w.status}</span></div>`);
+    } else {
+      out.push(`<div class="tradeRow"><b>${w.attackerName}</b> ⚔ <b>${w.defenderName}</b> — <span class="small">${w.status}</span> ${w.winner ? `| winner: ${w.winner}` : ''}</div>`);
+    }
+  });
+  if (document.getElementById('warList')) document.getElementById('warList').innerHTML = out.join('') || '<i>No wars</i>';
+});
 
     // expose logout for convenience
     window.logout = logout;
