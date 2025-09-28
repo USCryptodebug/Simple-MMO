@@ -109,6 +109,43 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
     </div>
   </div>
 
+  <!-- Alliance System -->
+<div style="margin-top:12px" class="box">
+  <h3>Alliance</h3>
+
+  <div id="allianceSetup">
+    <input id="allianceNameInput" placeholder="Alliance name">
+    <button onclick="createAlliance()">Create Alliance</button>
+    <input id="joinAllianceIdInput" placeholder="Alliance ID to join">
+    <button onclick="joinAlliance()">Join Alliance</button>
+  </div>
+
+  <div id="allianceContainer" style="display:none;">
+    <p><b>Alliance:</b> <span id="allianceName"></span></p>
+
+    <!-- Elections -->
+    <h4>Leader Election</h4>
+    <button onclick="voteForLeader()">Vote for Myself</button>
+    <p class="small">Current Leader: <span id="allianceLeader">none</span></p>
+
+    <!-- Leader Announcements -->
+    <div id="leaderControls" style="display:none; margin:6px 0;">
+      <textarea id="leaderPostInput" placeholder="Write announcement..." style="width:100%; height:60px;"></textarea>
+      <button onclick="postLeaderAnnouncement()">Post Announcement</button>
+    </div>
+    <div id="allianceAnnouncements" style="border:1px solid #333; background:#0f0f0f; padding:6px; margin-top:6px; max-height:100px; overflow:auto;">
+      <i>No announcements yet</i>
+    </div>
+
+    <!-- Alliance Chat -->
+    <h4>Alliance Chat</h4>
+    <div id="allianceChat" style="height:120px; overflow:auto; border:1px solid #333; background:#0f0f0f; margin:6px 0; padding:6px;"></div>
+    <input id="allianceMsgInput" placeholder="Message to allies...">
+    <button onclick="sendAllianceMessage()">Send</button>
+  </div>
+</div>
+  
+
     <!-- ===== War system UI) ===== -->
   <div style="margin-top:12px" class="box">
     <h3>War System</h3>
@@ -153,6 +190,12 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
 
     const messagesRef = db.ref('messages');
     const tradesRef = db.ref('economy'); // trades stored under /economy/{tradeId}
+    const alliancesRef = db.ref('alliances');
+    const allianceChatRef = db.ref('allianceChat');
+    const alliancePostsRef = db.ref('alliancePosts');
+    let myAllianceId = null;
+    let myAllianceLeader = null;
+
 
     let myUid = null;
     let myNationName = null;
@@ -191,6 +234,24 @@ ul#myNationResources { margin: 0; padding-left: 18px; }
             document.getElementById('nationSetup').style.display = 'none';
             document.getElementById('myNationContainer').style.display = 'block';
             updateMyNationDisplay(snap.val());
+                    // --- Alliance auto-load ---
+        if (snap.val().allianceId) {
+          myAllianceId = snap.val().allianceId;
+          alliancesRef.child(myAllianceId).once("value", aSnap => {
+            if (aSnap.exists()) {
+              document.getElementById("allianceSetup").style.display = "none";
+              document.getElementById("allianceContainer").style.display = "block";
+              document.getElementById("allianceName").innerText = aSnap.val().name;
+              document.getElementById("allianceLeader").innerText = aSnap.val().leaderName || "none";
+              if (aSnap.val().leader === myUid) {
+                document.getElementById("leaderControls").style.display = "block";
+              }
+              listenAllianceChat(myAllianceId);
+              listenAllianceAnnouncements(myAllianceId);
+            }
+          });
+        }
+
           } else {
             document.getElementById('nationSetup').style.display = 'block';
             document.getElementById('myNationContainer').style.display = 'none';
@@ -400,6 +461,54 @@ function boostWelfare() {
       });
     }
 
+    function createAlliance() {
+  if (!myUid) return alert("Login required");
+  const name = document.getElementById("allianceNameInput").value.trim();
+  if (!name) return alert("Enter alliance name");
+
+  const newAlliance = alliancesRef.push({
+    name: name,
+    members: { [myUid]: true },
+    leader: myUid,
+    leaderName: myNationName || "Unknown"
+  });
+
+  myAllianceId = newAlliance.key;
+  nationsRef.child(myUid).update({ allianceId: myAllianceId });
+  document.getElementById("allianceSetup").style.display = "none";
+  document.getElementById("allianceContainer").style.display = "block";
+  document.getElementById("allianceName").innerText = name;
+  document.getElementById("allianceLeader").innerText = myNationName;
+  document.getElementById("leaderControls").style.display = "block";
+}
+
+function joinAlliance() {
+  if (!myUid) return alert("Login required");
+  const id = document.getElementById("joinAllianceIdInput").value.trim();
+  if (!id) return alert("Enter alliance ID");
+
+  alliancesRef.child(id).once("value", snap => {
+    if (!snap.exists()) return alert("Alliance not found");
+
+    alliancesRef.child(id + "/members/" + myUid).set(true);
+    myAllianceId = id;
+    nationsRef.child(myUid).update({ allianceId: id });
+
+    document.getElementById("allianceSetup").style.display = "none";
+    document.getElementById("allianceContainer").style.display = "block";
+    document.getElementById("allianceName").innerText = snap.val().name;
+    document.getElementById("allianceLeader").innerText = snap.val().leaderName || "none";
+
+    // Show leader controls only if I’m leader
+    if (snap.val().leader === myUid) {
+      document.getElementById("leaderControls").style.display = "block";
+    }
+    listenAllianceChat(myAllianceId);
+    listenAllianceAnnouncements(myAllianceId);
+  });
+}
+
+
     // ---------- DISPLAY (safe, supports legacy numeric resources) ----------
     function updateMyNationDisplay(n) {
       const nameEl = document.getElementById('myNationName');
@@ -508,6 +617,96 @@ function boostWelfare() {
       document.getElementById('messages').appendChild(div);
       document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
     });
+
+    function sendAllianceMessage() {
+  if (!myUid || !myAllianceId) return alert("Join an alliance first!");
+  const text = document.getElementById("allianceMsgInput").value.trim();
+  if (!text) return;
+
+  allianceChatRef.child(myAllianceId).push({
+    uid: myUid,
+    name: myNationName || "Unknown",
+    text: text,
+    t: Date.now()
+  });
+  document.getElementById("allianceMsgInput").value = "";
+}
+
+function listenAllianceChat(allianceId) {
+  if (!allianceId) return;
+  allianceChatRef.child(allianceId).limitToLast(100).on("child_added", snap => {
+    const m = snap.val();
+    const div = document.createElement("div");
+    div.textContent = `${m.name}: ${m.text}`;
+    const chat = document.getElementById("allianceChat");
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+  });
+}
+
+function voteForLeader() {
+  if (!myAllianceId) return alert("Join an alliance first!");
+  alliancesRef.child(myAllianceId + "/votes/" + myUid).set({
+    uid: myUid,
+    name: myNationName,
+    votedAt: Date.now()
+  });
+
+  // Tally votes
+  alliancesRef.child(myAllianceId + "/votes").once("value", snap => {
+    const votes = snap.val() || {};
+    const counts = {};
+    for (const uid in votes) {
+      counts[uid] = (counts[uid] || 0) + 1;
+    }
+    let winner = null, max = 0;
+    for (const uid in counts) {
+      if (counts[uid] > max) {
+        max = counts[uid];
+        winner = uid;
+      }
+    }
+    if (winner) {
+      nationsRef.child(winner).once("value", nSnap => {
+        const winnerName = nSnap.exists() ? nSnap.val().name : "Unknown";
+        alliancesRef.child(myAllianceId).update({
+          leader: winner,
+          leaderName: winnerName
+        });
+        document.getElementById("allianceLeader").innerText = winnerName;
+        if (winner === myUid) {
+          document.getElementById("leaderControls").style.display = "block";
+        }
+      });
+    }
+  });
+}
+
+
+    function postLeaderAnnouncement() {
+  if (!myAllianceId) return;
+  const text = document.getElementById("leaderPostInput").value.trim();
+  if (!text) return;
+
+  alliancePostsRef.child(myAllianceId).push({
+    uid: myUid,
+    name: myNationName,
+    text: text,
+    t: Date.now()
+  });
+  document.getElementById("leaderPostInput").value = "";
+}
+
+function listenAllianceAnnouncements(allianceId) {
+  alliancePostsRef.child(allianceId).limitToLast(50).on("child_added", snap => {
+    const p = snap.val();
+    const div = document.createElement("div");
+    div.textContent = `${p.name} (Leader): ${p.text}`;
+    const board = document.getElementById("allianceAnnouncements");
+    board.appendChild(div);
+    board.scrollTop = board.scrollHeight;
+  });
+}
 
     // ---------- TRADING / ECONOMY (improved multi-resource trades) ----------
     // Post an offer — subtract seller's offered resource atomically, then create trade
