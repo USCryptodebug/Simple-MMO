@@ -477,9 +477,13 @@ function boostWelfare() {
   nationsRef.child(myUid).update({ allianceId: myAllianceId });
   document.getElementById("allianceSetup").style.display = "none";
   document.getElementById("allianceContainer").style.display = "block";
-  document.getElementById("allianceName").innerText = name;
+  document.getElementById("allianceName").innerText = snap.val().name + " (ID: " + myAllianceId + ")";
+
   document.getElementById("allianceLeader").innerText = myNationName;
   document.getElementById("leaderControls").style.display = "block";
+
+  alert("Alliance created! Share this ID so others can join: " + myAllianceId);
+
 }
 
 function joinAlliance() {
